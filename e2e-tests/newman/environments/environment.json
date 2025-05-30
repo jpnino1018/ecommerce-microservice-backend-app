@@ -1,0 +1,11 @@
+{
+  "id": "ecommerce-e2e-tests",
+  "name": "E-Commerce E2E Tests",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "{{API_GATEWAY_URL}}",
+      "enabled": true
+    }
+  ]
+}

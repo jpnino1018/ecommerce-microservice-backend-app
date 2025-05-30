@@ -1,0 +1,530 @@
+{
+  "info": {
+    "name": "E-Commerce Service E2E Tests",
+    "description": "End-to-end test suite for microservices-based ecommerce platform. Tests cover user authentication, product management, order processing, payment flow, and data consistency.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Authentication Flow",
+      "description": "User registration and authentication tests",
+      "item": [
+        {
+          "name": "Register User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('testUsername', 'testuser_' + pm.variables.replaceIn('{{$timestamp}}'));",
+                  "pm.collectionVariables.set('testPassword', 'Test123!');",
+                  "pm.collectionVariables.set('testEmail', 'test.' + pm.variables.replaceIn('{{$timestamp}}') + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response contains user details', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.username).to.equal(pm.collectionVariables.get('testUsername'));",
+                  "    pm.expect(response.email).to.equal(pm.collectionVariables.get('testEmail'));",
+                  "    pm.collectionVariables.set('userId', response.userId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"{{testUsername}}\",\n    \"email\": \"{{testEmail}}\",\n    \"password\": \"{{testPassword}}\",\n    \"firstName\": \"{{$randomFirstName}}\",\n    \"lastName\": \"{{$randomLastName}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user-service/api/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["user-service", "api", "users"]
+            }
+          }
+        },
+        {
+          "name": "Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains auth token', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.token).to.exist;",
+                  "    pm.collectionVariables.set('authToken', response.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"{{testUsername}}\",\n    \"password\": \"{{testPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/authenticate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "authenticate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Product Service Tests",
+      "description": "Tests for product management including CRUD operations and validations",
+      "item": [
+        {
+          "name": "List All Products",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response structure is valid', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.items).to.be.an('array');",
+                  "    ",
+                  "    if (response.items.length > 0) {",
+                  "        const product = response.items[0];",
+                  "        pm.expect(product).to.have.property('productId');",
+                  "        pm.expect(product).to.have.property('productTitle');",
+                  "        pm.expect(product).to.have.property('priceUnit');",
+                  "        pm.expect(product.priceUnit).to.be.a('number');",
+                  "    }",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "if (response.items && response.items.length > 0) {",
+                  "    pm.collectionVariables.set('productId', response.items[0].productId);",
+                  "    console.log('Found existing product:', response.items[0].productTitle);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/product-service/api/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["product-service", "api", "products"]
+            }
+          }
+        },
+        {          "name": "Create New Product",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('testProductTitle', 'Test Product ' + pm.variables.replaceIn('{{$randomProductName}}'));",
+                  "pm.collectionVariables.set('testSku', 'TST-' + pm.variables.replaceIn('{{$randomInt}}'));",
+                  "pm.collectionVariables.set('testPrice', Math.round(Math.random() * 1000 * 100) / 100);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response contains created product details', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.productId).to.exist;",
+                  "    pm.expect(response.productTitle).to.equal(pm.collectionVariables.get('testProductTitle'));",
+                  "    pm.expect(response.sku).to.equal(pm.collectionVariables.get('testSku'));",
+                  "    pm.expect(response.priceUnit).to.equal(Number(pm.collectionVariables.get('testPrice')));",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.collectionVariables.set('newProductId', response.productId);",
+                  "console.log('Created new product:', response.productTitle, 'with ID:', response.productId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productTitle\": \"{{testProductTitle}}\",\n  \"imageUrl\": \"https://picsum.photos/200/300?random={{$timestamp}}\",\n  \"sku\": \"{{testSku}}\",\n  \"priceUnit\": {{testPrice}},\n  \"quantity\": {{$randomInt}},\n  \"description\": \"{{$randomLoremParagraph}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/product-service/api/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["product-service", "api", "products"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. User Order Flow",
+      "item": [
+        {          "name": "Create Order",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('orderDate', new Date().toISOString());",
+                  "// userId is already set from authentication response"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Order created with correct data', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.orderId).to.exist;",
+                  "    pm.expect(response.userId).to.equal(pm.collectionVariables.get('userId'));",
+                  "    pm.expect(response.orderStatus).to.equal('PENDING');",
+                  "    pm.expect(response.orderDate).to.equal(pm.collectionVariables.get('orderDate'));",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.collectionVariables.set('orderId', response.orderId);",
+                  "console.log('Created new order:', response.orderId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"orderStatus\": \"PENDING\",\n  \"orderDate\": \"{{orderDate}}\",\n  \"shippingAddress\": {\n    \"street\": \"{{$randomStreetAddress}}\",\n    \"city\": \"{{$randomCity}}\",\n    \"state\": \"{{$randomState}}\",\n    \"country\": \"{{$randomCountry}}\",\n    \"zipCode\": \"{{$randomZipCode}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/order-service/api/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["order-service", "api", "orders"]
+            }
+          }
+        },
+        {
+          "name": "Add Item to Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/shipping-service/api/shippings",
+              "host": ["{{baseUrl}}"],
+              "path": ["shipping-service", "api", "shippings"]
+            }
+          }
+        }
+      ]
+    },
+    {      "name": "3. Payment Flow",
+      "description": "Tests for payment processing and verification",
+      "item": [
+        {
+          "name": "Create Payment",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('paymentAmount', pm.variables.replaceIn('{{testPrice}}'));",
+                  "pm.collectionVariables.set('paymentMethod', 'CREDIT_CARD');",
+                  "pm.collectionVariables.set('transactionId', 'TRX-' + pm.variables.replaceIn('{{$timestamp}}'));",
+                  "console.log('Creating payment for order:', pm.collectionVariables.get('orderId'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Payment created successfully', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.paymentId).to.exist;",
+                  "    pm.expect(response.orderId).to.equal(pm.collectionVariables.get('orderId'));",
+                  "    pm.expect(response.amount).to.equal(Number(pm.collectionVariables.get('paymentAmount')));",
+                  "    pm.expect(response.paymentStatus).to.equal('COMPLETED');",
+                  "    pm.expect(response.transactionId).to.equal(pm.collectionVariables.get('transactionId'));",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.collectionVariables.set('paymentId', response.paymentId);",
+                  "console.log('Created payment:', response.paymentId, 'for order:', response.orderId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": {{paymentAmount}},\n  \"paymentMethod\": \"{{paymentMethod}}\",\n  \"paymentStatus\": \"COMPLETED\",\n  \"transactionId\": \"{{transactionId}}\",\n  \"cardDetails\": {\n    \"cardNumber\": \"4111111111111111\",\n    \"expiryMonth\": \"12\",\n    \"expiryYear\": \"2025\",\n    \"cvv\": \"123\"\n  },\n  \"billingAddress\": {\n    \"street\": \"{{$randomStreetAddress}}\",\n    \"city\": \"{{$randomCity}}\",\n    \"state\": \"{{$randomState}}\",\n    \"country\": \"{{$randomCountry}}\",\n    \"zipCode\": \"{{$randomZipCode}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payment-service/api/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-service", "api", "payments"]
+            }
+          }
+        },
+        {
+          "name": "Verify Payment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Payment status is COMPLETED', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.paymentStatus).to.equal('COMPLETED');",
+                  "    pm.expect(response.orderId).to.equal(pm.collectionVariables.get('orderId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payment-service/api/payments/{{paymentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["payment-service", "api", "payments", "{{paymentId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Order Status Verification",
+      "item": [
+        {
+          "name": "Check Order Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Order has correct items', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.orderStatus).to.equal('COMPLETED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/order-service/api/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["order-service", "api", "orders", "{{orderId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Cleanup",
+      "item": [
+        {
+          "name": "Delete Test Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "console.log('Cleaned up test product:', pm.collectionVariables.get('newProductId'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/product-service/api/products/{{newProductId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["product-service", "api", "products", "{{newProductId}}"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testUsername",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "productId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newProductId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "paymentId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

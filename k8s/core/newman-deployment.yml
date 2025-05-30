@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: newman
+spec:
+  template:
+    metadata:
+      name: newman
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: newman
+          image: jpnino/newman:latest
+          volumeMounts:
+            - name: reports
+              mountPath: /etc/newman/reports
+      volumes:
+        - name: reports
+          emptyDir: {}
