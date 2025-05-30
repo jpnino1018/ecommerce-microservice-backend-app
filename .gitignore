@@ -33,4 +33,29 @@ build/
 .vscode/
 
 ### Terraform ###
-terraform/
+# Local .terraform directories
+.terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.backup
+
+# Crash log files
+crash.log
+
+# Exclude Terraform plan output
+*.tfplan
+
+# Sensitive variable files (optional)
+*.tfvars
+*.tfvars.json
+
+# Ignore override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore CLI configuration file
+.terraform.rc
+terraform.rc

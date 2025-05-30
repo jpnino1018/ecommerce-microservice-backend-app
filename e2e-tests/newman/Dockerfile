@@ -1,17 +1,15 @@
-FROM node:16-alpine
+FROM postman/newman:latest
 
-# Install Newman and HTML reporter
-RUN npm install -g newman@5.3.2 newman-reporter-htmlextra
+# Install HTML reporter
+RUN npm install -g newman-reporter-htmlextra
 
 WORKDIR /etc/newman
 
-# Copy collection and environment files
-COPY collections/* ./collections/
-COPY environments/* ./environments/
+# Copy collection file
+COPY ecommerce-e2e.collection.json collection.json
 
 # Create directory for reports
 RUN mkdir -p reports
 
-# Entry point
 ENTRYPOINT ["newman"]
-CMD ["run", "ecommerce-e2e.collection.json", "-r", "cli,htmlextra", "--reporter-htmlextra-export", "reports/report.html", "--disable-unicode"]
+CMD ["run", "collection.json", "-r", "cli,htmlextra", "--reporter-htmlextra-export", "reports/report.html", "--disable-unicode"]

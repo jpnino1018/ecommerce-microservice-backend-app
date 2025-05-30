@@ -1,13 +1,12 @@
-{
-  "info": {
+{  "info": {
     "name": "E-Commerce Service E2E Tests",
-    "description": "End-to-end test suite for microservices-based ecommerce platform. Tests cover user authentication, product management, order processing, payment flow, and data consistency.",
+    "description": "End-to-end test suite for microservices-based ecommerce platform",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "1. Authentication Flow",
-      "description": "User registration and authentication tests",
+      "name": "1. Create user, credential, and multiple products",
+      "description": "Creates a test user with credentials and multiple products to be used in subsequent tests",
       "item": [
         {
           "name": "Register User",
@@ -98,13 +97,7 @@
               "path": ["api", "authenticate"]
             }
           }
-        }
-      ]
-    },
-    {
-      "name": "1. Product Service Tests",
-      "description": "Tests for product management including CRUD operations and validations",
-      "item": [
+        },
         {
           "name": "List All Products",
           "event": [
@@ -212,9 +205,11 @@
       ]
     },
     {
-      "name": "2. User Order Flow",
+      "name": "2. Make a payment",
+      "description": "Tests the complete payment flow including cart creation, order placement, and payment processing",
       "item": [
-        {          "name": "Create Order",
+        {
+          "name": "Create Order",
           "event": [
             {
               "listen": "prerequest",
@@ -303,12 +298,7 @@
               "path": ["shipping-service", "api", "shippings"]
             }
           }
-        }
-      ]
-    },
-    {      "name": "3. Payment Flow",
-      "description": "Tests for payment processing and verification",
-      "item": [
+        },
         {
           "name": "Create Payment",
           "event": [
@@ -405,45 +395,88 @@
       ]
     },
     {
-      "name": "4. Order Status Verification",
+      "name": "3. Create, update and delete shipping",
+      "description": "Tests the full CRUD operations for shipping management",
       "item": [
         {
-          "name": "Check Order Status",
+          "name": "Create Shipping",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('shippingStreet', '123 Test St');",
+                  "pm.collectionVariables.set('shippingCity', 'Test City');",
+                  "pm.collectionVariables.set('shippingState', 'TS');",
+                  "pm.collectionVariables.set('shippingZip', '12345');",
+                  "pm.collectionVariables.set('shippingCountry', 'Testland');"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status code is 200', function() {",
-                  "    pm.response.to.have.status(200);",
+                  "pm.test('Status code is 201', function() {",
+                  "    pm.response.to.have.status(201);",
                   "});",
                   "",
-                  "pm.test('Order has correct items', function() {",
+                  "pm.test('Shipping created successfully', function() {",
                   "    const response = pm.response.json();",
-                  "    pm.expect(response.orderStatus).to.equal('COMPLETED');",
-                  "});"
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.shippingId).to.exist;",
+                  "    pm.expect(response.street).to.equal(pm.collectionVariables.get('shippingStreet'));",
+                  "    pm.expect(response.city).to.equal(pm.collectionVariables.get('shippingCity'));",
+                  "    pm.expect(response.state).to.equal(pm.collectionVariables.get('shippingState'));",
+                  "    pm.expect(response.zipCode).to.equal(pm.collectionVariables.get('shippingZip'));",
+                  "    pm.expect(response.country).to.equal(pm.collectionVariables.get('shippingCountry'));",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.collectionVariables.set('shippingId', response.shippingId);",
+                  "console.log('Created shipping:', response.shippingId);"
                 ]
               }
             }
           ],
           "request": {
-            "method": "GET",
-            "header": [],
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"street\": \"{{shippingStreet}}\",\n  \"city\": \"{{shippingCity}}\",\n  \"state\": \"{{shippingState}}\",\n  \"zipCode\": \"{{shippingZip}}\",\n  \"country\": \"{{shippingCountry}}\"\n}"
+            },
             "url": {
-              "raw": "{{baseUrl}}/order-service/api/orders/{{orderId}}",
+              "raw": "{{baseUrl}}/shipping-service/api/shippings",
               "host": ["{{baseUrl}}"],
-              "path": ["order-service", "api", "orders", "{{orderId}}"]
+              "path": ["shipping-service", "api", "shippings"]
             }
           }
-        }
-      ]
-    },
-    {
-      "name": "5. Cleanup",
-      "item": [
+        },
         {
-          "name": "Delete Test Product",
+          "name": "Update Shipping",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('newShippingStreet', '456 New St');",
+                  "pm.collectionVariables.set('newShippingCity', 'New City');",
+                  "pm.collectionVariables.set('newShippingState', 'NS');",
+                  "pm.collectionVariables.set('newShippingZip', '54321');",
+                  "pm.collectionVariables.set('newShippingCountry', 'Newland');"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -452,7 +485,59 @@
                   "    pm.response.to.have.status(200);",
                   "});",
                   "",
-                  "console.log('Cleaned up test product:', pm.collectionVariables.get('newProductId'));"
+                  "pm.test('Shipping updated successfully', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.shippingId).to.exist;",
+                  "    pm.expect(response.street).to.equal(pm.collectionVariables.get('newShippingStreet'));",
+                  "    pm.expect(response.city).to.equal(pm.collectionVariables.get('newShippingCity'));",
+                  "    pm.expect(response.state).to.equal(pm.collectionVariables.get('newShippingState'));",
+                  "    pm.expect(response.zipCode).to.equal(pm.collectionVariables.get('newShippingZip'));",
+                  "    pm.expect(response.country).to.equal(pm.collectionVariables.get('newShippingCountry'));",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.collectionVariables.set('shippingId', response.shippingId);",
+                  "console.log('Updated shipping:', response.shippingId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shippingId\": \"{{shippingId}}\",\n  \"userId\": \"{{userId}}\",\n  \"street\": \"{{newShippingStreet}}\",\n  \"city\": \"{{newShippingCity}}\",\n  \"state\": \"{{newShippingState}}\",\n  \"zipCode\": \"{{newShippingZip}}\",\n  \"country\": \"{{newShippingCountry}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/shipping-service/api/shippings/{{shippingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["shipping-service", "api", "shippings", "{{shippingId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Shipping",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 204', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "",
+                  "console.log('Deleted shipping:', pm.collectionVariables.get('shippingId'));"
                 ]
               }
             }
@@ -466,19 +551,139 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/product-service/api/products/{{newProductId}}",
+              "raw": "{{baseUrl}}/shipping-service/api/shippings/{{shippingId}}",
               "host": ["{{baseUrl}}"],
-              "path": ["product-service", "api", "products", "{{newProductId}}"]
+              "path": ["shipping-service", "api", "shippings", "{{shippingId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Add multiple fav products and remove one",
+      "description": "Tests favorite product management including adding multiple products and removing one",
+      "item": [
+        {
+          "name": "Add Product to Favorites",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Product is added to favorites', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.message).to.equal('Product added to favorites');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"productId\": \"{{productId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/favorites-service/api/favorites",
+              "host": ["{{baseUrl}}"],
+              "path": ["favorites-service", "api", "favorites"]
+            }
+          }
+        },
+        {
+          "name": "Remove Product from Favorites",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Product is removed from favorites', function() {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.be.an('object');",
+                  "    pm.expect(response.message).to.equal('Product removed from favorites');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/favorites-service/api/favorites/{{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["favorites-service", "api", "favorites", "{{productId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Test deleted user",
+      "description": "Tests the system behavior when a user is deleted and validates the cascade effects",
+      "item": [
+        {
+          "name": "Delete Test User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 204', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "",
+                  "console.log('Deleted test user:', pm.collectionVariables.get('userId'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user-service/api/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user-service", "api", "users", "{{userId}}"]
             }
           }
         }
       ]
     }
-  ],
-  "variable": [
+  ],  "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8080",
+      "value": "http://api-gateway:8080",
       "type": "string"
     },
     {
@@ -523,6 +728,11 @@
     },
     {
       "key": "paymentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "shippingId",
       "value": "",
       "type": "string"
     }

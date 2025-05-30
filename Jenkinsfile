@@ -1,270 +1,360 @@
 pipeline {
-  agent {
-    docker {
-      image 'leferez/jenkins-agent:latest'
-      args '-u 0:0 -v /var/run/docker.sock:/var/run/docker.sock'
-    }
-  }
-
-  environment {
-    RESOURCE_GROUP = 'mi-grupo'          // Nombre del resource group
-    CLUSTER_NAME = 'mi-cluster'       // Nombre del clúster AKS
-    K8S_MANIFESTS_DIR = 'k8s'                   // Carpeta local en el repo
-    AZURE_CREDENTIALS_ID = 'azure-service-principal'  // ID de las credenciales de Azure en Jenkins
-    GH_TOKEN = credentials('github-token-txt')
-  }
-
-  stages {
+    agent any
     
-    stage('User Input') {
-      steps {
-        script {
-          env.PROFILE = input message: "Elige un perfil (prod / dev / stage)",
-                              parameters: [choice(name: 'PROFILE', choices: ['prod', 'dev', 'stage'], description: 'Selecciona el perfil de despliegue')]
+    options {
+        // This enables GitHub integration for status checks
+        githubProjectProperty(projectUrlStr: 'https://github.com/jpnino/ecommerce-microservice-backend-app')
+    }
+    
+    triggers {
+        // This sets up GitHub webhook trigger
+        githubPush()
+    }
+      
+    environment {
+        // Azure credentials and configs
+        AZURE_CREDS = credentials('azure-credentials')
+        AKS_CLUSTER_NAME = 'ecommerce-aks'
+        AKS_RESOURCE_GROUP = 'ecommerce-rg'
+        
+        // DockerHub credentials
+        DOCKER_CREDS = credentials('docker-credentials')
+        DOCKER_USERNAME = 'jpnino'
+        
+        // Application versioning
+        APP_VERSION = "${BUILD_NUMBER}"
+        GIT_BRANCH = "${env.GIT_BRANCH}"
+        
+        // Test configurations
+        NEWMAN_VERSION = '5.3.2'
+        COLLECTION_PATH = './e2e-tests/newman/collections/ecommerce-e2e.collection.json'
+        ENVIRONMENT_PATH = './e2e-tests/newman/environments/environment.json'
+        
+        // Add GitHub credentials
+        GITHUB_CREDS = credentials('github-credentials')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                // Clean workspace before checking out
+                cleanWs()
+                // Checkout code from GitHub
+                checkout scm
+            }
         }
-      }
-    }
-    
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-    
-    stage('Build') {
-      steps {
-        sh '''
-          echo "Building the project..."
-          mvn clean package -DskipTests
-        '''
-      }
-    }
 
-    stage('Unit and Integration Tests') {
-      steps {
-        sh '''
-          echo "Running unit and integration tests..."
-          mvn clean verify -DskipTests=false
-        '''
-      }
-    }
-
-    stage('Build and Push Docker Images') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'docker-hub-credentials',
-          usernameVariable: 'DOCKER_USERNAME',
-          passwordVariable: 'DOCKER_PASSWORD'
-        )]) {
-          sh '''
-            echo "Logging in to Docker Hub..."
-            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
-            echo "Building and pushing Docker images..."
-            docker-compose -f compose.yml build
-            docker-compose -f compose.yml push
-
-            echo "Logout from Docker Hub..."
-            docker logout
-          '''
+        stage('Determine Environment') {
+            steps {
+                script {                    env.DEPLOY_ENV = ''
+                    env.SHOULD_DEPLOY = false
+                    
+                    // Simple branch to environment mapping
+                    switch(env.BRANCH_NAME) {
+                        case 'dev':
+                            env.DEPLOY_ENV = 'dev'
+                            env.SHOULD_DEPLOY = true
+                            break
+                        case 'stage':
+                            env.DEPLOY_ENV = 'stage'
+                            env.SHOULD_DEPLOY = true
+                            break
+                        case 'main':
+                            env.DEPLOY_ENV = 'prod'
+                            env.SHOULD_DEPLOY = true
+                            break
+                        default:
+                            echo "Branch ${env.BRANCH_NAME} is not configured for deployment"
+                            currentBuild.result = 'NOT_BUILT'
+                            return
+                    }
+                    
+                    echo "Detected environment: ${env.DEPLOY_ENV}"
+                }
+            }
         }
-      }
-    }
-    
-    
-    stage('Login Azure') {
-      steps {
-        withCredentials([azureServicePrincipal(
-          credentialsId: env.AZURE_CREDENTIALS_ID,
-          subscriptionIdVariable: 'AZ_SUBSCRIPTION_ID',
-          clientIdVariable: 'AZ_CLIENT_ID',
-          clientSecretVariable: 'AZ_CLIENT_SECRET',
-          tenantIdVariable: 'AZ_TENANT_ID'
-        )]) {
-          sh '''
-
-            set -x
-            echo "Attempting Azure login..."
-            echo "AZ_CLIENT_ID is present (masked): $AZ_CLIENT_ID"
-            echo "AZ_TENANT_ID is present (masked): $AZ_TENANT_ID"
-            echo "Checking az version..."
-            az --version
-            echo "Attempting login now..."
-            az login --service-principal -u "$AZ_CLIENT_ID" -p "$AZ_CLIENT_SECRET" --tenant "$AZ_TENANT_ID" --output none
-            echo "Setting Azure subscription..."
-            az account set --subscription "$AZ_SUBSCRIPTION_ID" --output none
-            echo "Azure login and subscription set successfully."
-          '''
+        
+        stage('Unit Tests') {
+            steps {
+                script {
+                    githubNotify(context: 'Unit Tests', description: 'Running unit tests...', status: 'PENDING')
+                      // For now, only run tests for product-service and user-service
+                    def services = ['product-service', 'user-service']
+                    
+                    for (service in services) {
+                        dir(service) {
+                            sh './mvnw clean test'
+                            // Archive test results immediately
+                            junit "**/target/surefire-reports/*.xml"
+                        }
+                    }
+                }
+            }
+            post {
+                success {
+                    githubNotify(context: 'Unit Tests', description: 'Unit tests passed', status: 'SUCCESS')
+                }
+                failure {
+                    githubNotify(context: 'Unit Tests', description: 'Unit tests failed', status: 'FAILURE')
+                    error 'Unit tests failed'
+                }
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
+        }        stage('Integration Tests') {
+            steps {
+                script {
+                    githubNotify(context: 'Integration Tests', description: 'Running integration tests...', status: 'PENDING')
+                    
+                    // For now, only run tests for product-service and user-service
+                    def services = ['product-service', 'user-service']
+                    
+                    for (service in services) {
+                        dir(service) {
+                            sh './mvnw verify -DskipUnitTests'
+                        }
+                    }
+                }
+            }
+            post {
+                success {
+                    githubNotify(context: 'Integration Tests', description: 'Integration tests passed', status: 'SUCCESS')
+                }
+                failure {
+                    githubNotify(context: 'Integration Tests', description: 'Integration tests failed', status: 'FAILURE')
+                    error 'Integration tests failed'
+                }
+                always {
+                    junit '**/target/failsafe-reports/*.xml'
+                }
+            }
         }
-      }
-    }
-
-    stage('Obtener credenciales AKS') {
-      steps {
-        sh '''
-          echo "Instalando kubectl..."
-          az aks install-cli
-          echo "Obteniendo credenciales del clúster..."
-          az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --overwrite-existing
-          kubectl config current-context
-        '''
-      }
-    }
-    
-    stage('Desplegar manifiestos') {
-      steps {
-        sh '''
-          echo "Deploying Core Services..."
-          echo "Deploying Zipkin..."
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/core/zipkin-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=zipkin --timeout=200s
-          
-          echo "Deploying Service Discovery..."
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/$PROFILE/service-discovery-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=service-discovery --timeout=300s
-
-          echo "Deploying Cloud Config..."
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/core/cloud-config-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=cloud-config --timeout=300s
-        '''
-      }
-    }
-
-    stage('Desplegar microservicios') {
-      steps {
-        sh """
-          echo "Deploying Microservices..."
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/api-gateway-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=api-gateway --timeout=300s
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/favourite-service-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=favourite-service --timeout=300s
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/order-service-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=order-service --timeout=300s
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/payment-service-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=payment-service --timeout=300s
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/product-service-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=product-service --timeout=300s
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/proxy-client-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=proxy-client --timeout=300s
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/shipping-service-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=shipping-service --timeout=300s
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/${PROFILE}/user-service-deployment.yaml
-          kubectl wait --for=condition=ready pod -l app=user-service --timeout=300s
-        """
-      }
-    }
-    stage('Correr e2e') {
-      when {
-        expression { env.PROFILE == 'stage' }
-      }
-      steps {
-        sh '''
-          echo "Running E2E tests..."
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/core/newman-e2e-job.yaml
-          kubectl wait --for=condition=complete job/newman-e2e-job --timeout=600s
-          echo "Fetching Newman results..."
-          kubectl logs job/newman-e2e-job
-        '''
-      }
-    }
-
-    stage('IP de api-gateway') {
-      steps {
-        sh '''
-          echo "Waiting for API Gateway IP address..."
-          sleep 30 # Esperar a que el balanceador de carga asigne la IP
-          GATEWAY_IP=$(kubectl get service api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          echo "API Gateway URL: http://$GATEWAY_IP:8080"
-        '''
-      }
-    }
-    
-    stage('Desplegar Locust') {
-      when {
-        expression { env.PROFILE == 'dev' || env.PROFILE == 'stage' }
-      }
-      steps {
-        sh '''
-          echo "Deploying Locust..."
-          kubectl apply -f ${K8S_MANIFESTS_DIR}/core/locust-deployment.yaml
-          echo "Waiting for Locust IP address..."
-          sleep 30 # Esperar a que el balanceador de carga asigne la IP
-          LOCUST_IP=$(kubectl get service locust -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          echo "Locust URL: http://$LOCUST_IP:8089"
-        '''
-      }
-    }
-    
-    stage('Generar Release Notes') {
-      when {
-        expression { env.PROFILE == 'prod' }
-      }
-      steps {
-        withCredentials([string(credentialsId: 'github-token-txt', variable: 'GH_TOKEN')]) {
-          script {
-            def now = new Date()
-            def tag = now.format('MM.dd.HH.mm')
-            def title = "Release ${tag}"
-            def commitHash = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-            def commitMessage = sh(returnStdout: true, script: 'git log -1 --pretty=%B').trim()
-            def recentCommits = sh(returnStdout: true, script: 'git log --oneline -n 5').trim()
-            def changedFiles = sh(returnStdout: true, script: 'git diff --name-only 695a6d49a8fb5559b025e22017df1ec657104309..HEAD || echo "No changes detected"').trim()
-
-            def notes = """
-# 🚀 Release Notes - ${tag}
-
-**📅 Fecha:** ${now.format('yyyy-MM-dd HH:mm:ss')}  
-**🔑 Commit Actual:** ${commitHash}  
-
-## 🆕 Último Commit
-${commitMessage}
-
-## 📜 Últimos 5 Commits
-${recentCommits}
-
-## 📂 Archivos Modificados
-${changedFiles}
-
-## ✅ Validaciones Automatizadas
-- Pruebas unitarias en user-service
-- Pruebas de integración en user-service y payment-service
-- Pruebas End-to-End con Postman Newman
-- Pruebas de carga con Locust en el puerto 8089
-- Retornar las IPs de los servicios desplegados api-gateway y locust
-
-## 🧩 Microservicios involucrados
-- api-gateway
-- cloud-config
-- favourite-service
-- locust (para pruebas de carga)
-- newman (como un job de Kubernetes)
-- order-service
-- payment-service
-- product-service
-- proxy-client
-- shipping-service
-- user-service
-- zipkin
-
-"""
-
-            // Ejecutar los comandos shell
-            sh """
-              git config user.email "ci-bot@example.com"
-              git config user.name "CI Bot"
-              git config --global url."https://oauth2:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-              
-              git tag ${tag}
-              git push origin ${tag}
-              gh release create ${tag} --title "${title}" --notes "${notes}"
-            """
-
-            echo "✅ Release ${tag} creado con changelog personalizado"
-          }
+        
+        stage('Build & Push Docker Images') {
+            when {
+                expression { env.SHOULD_DEPLOY }
+            }
+            steps {
+                script {                    def services = ['user-service', 'order-service', 'product-service', 
+                                  'payment-service', 'shipping-service', 'favourite-service']
+                    
+                    // Login to DockerHub
+                    sh "echo \$DOCKER_CREDS_PSW | docker login -u \$DOCKER_CREDS_USR --password-stdin"
+                    
+                    for (service in services) {
+                        dir(service) {
+                            def imageTag = "${DOCKER_USERNAME}/${service}:${env.DEPLOY_ENV}-${APP_VERSION}"
+                            def latestTag = "${DOCKER_USERNAME}/${service}:latest"
+                            
+                            sh "docker build -t ${imageTag} -t ${latestTag} ."
+                            sh "docker push ${imageTag}"
+                            
+                            // Only update latest tag for prod deployments
+                            if (env.DEPLOY_ENV == 'prod') {
+                                sh "docker push ${latestTag}"
+                            }
+                              // Update k8s manifests with new image tag using sed
+                            sh """
+                                # Update the image tag in the manifest
+                                sed -i "s|${DOCKER_USERNAME}/${service}:.*|${DOCKER_USERNAME}/${service}:${env.DEPLOY_ENV}-${APP_VERSION}|g" k8s/${env.DEPLOY_ENV}/${service}-deployment.yml
+                                
+                                # Configure Git for commits
+                                git config user.email "jenkins@example.com"
+                                git config user.name "Jenkins CI"
+                                
+                                # Stage and commit the changes
+                                git add k8s/${env.DEPLOY_ENV}/${service}-deployment.yml
+                                git commit -m "Update ${service} image to ${env.DEPLOY_ENV}-${APP_VERSION} [skip ci]"
+                                
+                                # Push changes back to the repository
+                                git push origin ${env.BRANCH_NAME}
+                            """
+                        }
+                    }
+                }
+            }
         }
-      }
+        
+        stage('Deploy to AKS') {
+            when {
+                expression { env.SHOULD_DEPLOY }
+            }
+            steps {
+                script {
+                    githubNotify(context: 'Deployment', description: 'Deploying to AKS...', status: 'PENDING')
+                    // Connect to AKS
+                    sh """
+                        az aks get-credentials \
+                            --resource-group ${AKS_RESOURCE_GROUP} \
+                            --name ${AKS_CLUSTER_NAME} \
+                            --overwrite-existing
+                    """
+                      // Apply environment-specific configurations with namespace
+                    // Create or ensure namespace exists
+                    sh "kubectl create namespace ${env.DEPLOY_ENV} --dry-run=client -o yaml | kubectl apply -f -"
+                    
+                    // Step 1: Apply core infrastructure services
+                    echo "Deploying core infrastructure services..."
+                    dir('k8s/core') {
+                        sh "kubectl apply -f . -n ${env.DEPLOY_ENV}"
+                        
+                        // Wait for core services to be ready
+                        sh "kubectl rollout status deployment/cloud-config -n ${env.DEPLOY_ENV} --timeout=300s"
+                        sh "kubectl rollout status deployment/zipkin -n ${env.DEPLOY_ENV} --timeout=300s"
+                    }
+                    
+                    // Step 2: Deploy service discovery
+                    echo "Deploying service discovery..."
+                    dir("k8s/${env.DEPLOY_ENV}") {
+                        sh "kubectl apply -f service-discovery-deployment.yml -n ${env.DEPLOY_ENV}"
+                        sh "kubectl rollout status deployment/service-discovery -n ${env.DEPLOY_ENV} --timeout=300s"
+                    }
+                    
+                    // Step 3: Wait for service discovery to be fully ready (additional buffer)
+                    sh "sleep 30"
+                    
+                    // Step 4: Deploy API Gateway
+                    echo "Deploying API Gateway..."
+                    dir("k8s/${env.DEPLOY_ENV}") {
+                        sh "kubectl apply -f api-gateway-deployment.yml -n ${env.DEPLOY_ENV}"
+                        sh "kubectl rollout status deployment/api-gateway -n ${env.DEPLOY_ENV} --timeout=300s"
+                    }
+                    
+                    // Step 5: Deploy all other microservices
+                    echo "Deploying microservices..."
+                    dir("k8s/${env.DEPLOY_ENV}") {
+                        def baseServices = ['user-service', 'product-service']
+                        def dependentServices = ['order-service', 'payment-service', 
+                                               'shipping-service', 'favourite-service']
+                        
+                        // Deploy base services first
+                        for (service in baseServices) {
+                            sh "kubectl apply -f ${service}-deployment.yml -n ${env.DEPLOY_ENV}"
+                            sh "kubectl rollout status deployment/${service} -n ${env.DEPLOY_ENV} --timeout=300s"
+                        }
+                        
+                        // Then deploy services with dependencies
+                        for (service in dependentServices) {
+                            sh "kubectl apply -f ${service}-deployment.yml -n ${env.DEPLOY_ENV}"
+                            sh "kubectl rollout status deployment/${service} -n ${env.DEPLOY_ENV} --timeout=300s"
+                        }
+                    }
+                    }
+                }
+            }
+            post {
+                success {
+                    githubNotify(context: 'Deployment', description: 'Deployment successful', status: 'SUCCESS')
+                }
+                failure {
+                    githubNotify(context: 'Deployment', description: 'Deployment failed', status: 'FAILURE')
+                }
+            }
+        }          stage('E2E Tests') {
+            when {
+                expression { env.BRANCH_NAME == 'stage' || env.BRANCH_NAME == 'main' }
+            }
+            steps {
+                script {
+                    githubNotify(context: 'E2E Tests', description: 'Running E2E tests...', status: 'PENDING')
+                    
+                    try {
+                        // Build Newman Docker image
+                        dir('e2e-tests/newman') {
+                            def newmanImage = "${DOCKER_USERNAME}/newman:${env.DEPLOY_ENV}-${APP_VERSION}"
+                            sh "docker build -t ${newmanImage} ."
+                        }
+                          // Run tests using docker with environment-specific config
+                        def envFile
+                        switch(env.BRANCH_NAME) {
+                            case 'main':
+                                envFile = 'aks-prod'
+                                break
+                            case 'stage':
+                                envFile = 'aks-stage'
+                                break
+                            default:
+                                error "E2E tests not configured for branch ${env.BRANCH_NAME}"
+                        }
+                        
+                        sh """
+                            docker run --network=host \
+                            -v "\${WORKSPACE}/e2e-tests/newman/collections:/etc/newman/collections" \
+                            -v "\${WORKSPACE}/e2e-tests/newman/environments:/etc/newman/environments" \
+                            -v "\${WORKSPACE}/e2e-tests/newman/reports:/etc/newman/reports" \
+                            ${newmanImage} run collections/ecommerce-e2e.collection.json \
+                            --environment environments/${envFile}.environment.json \
+                            --reporters cli,junit,htmlextra \
+                            --reporter-junit-export reports/junit-report.xml \
+                            --reporter-htmlextra-export reports/newman-report.html
+                        """
+                        
+                        // Publish test results
+                        junit 'e2e-tests/newman/reports/junit-report.xml'
+                        
+                        // Archive HTML report
+                        archiveArtifacts artifacts: 'e2e-tests/newman/reports/newman-report.html', 
+                                       allowEmptyArchive: true
+                    } catch (Exception e) {
+                        githubNotify(context: 'E2E Tests', description: 'E2E tests failed', status: 'FAILURE')
+                        error "E2E tests failed: ${e.message}"
+                    }
+                    
+                    githubNotify(context: 'E2E Tests', description: 'E2E tests passed', status: 'SUCCESS')
+                }
+            }
+        }
+        
+        stage('Generate Release Notes') {
+            when {
+                expression { env.DEPLOY_ENV == 'prod' }
+            }
+            steps {
+                script {
+                    def changelog = sh(
+                        script: 'git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"%h - %s"',
+                        returnStdout: true
+                    )
+                    
+                    writeFile file: 'release-notes.md', text: """
+                        # Release Notes - Version ${APP_VERSION}
+                        
+                        ## Changes
+                        ${changelog}
+                        
+                        ## Deployment Info
+                        - Environment: Production
+                        - Build Number: ${BUILD_NUMBER}
+                        - Deployment Date: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+                    """
+                    
+                    archiveArtifacts artifacts: 'release-notes.md'
+                }
+            }
+        }
     }
-
-
-  }
+    
+    post {
+        always {
+            // Archive test reports
+            archiveArtifacts artifacts: 'e2e-tests/reports/**/*', allowEmptyArchive: true
+            
+            // Send notifications
+            script {
+                def envName = env.DEPLOY_ENV ?: 'unknown'
+                def status = currentBuild.result ?: 'SUCCESS'
+                
+                emailext subject: "${envName.toUpperCase()} Build ${status}: ${currentBuild.fullDisplayName}",
+                         body: """
+                            Build: ${currentBuild.fullDisplayName}
+                            Status: ${status}
+                            Environment: ${envName}
+                            Changes: ${currentBuild.changeSets.size() > 0 ? currentBuild.changeSets.collect { it.items }.flatten().collect { "${it.author.fullName}: ${it.msg}" }.join('\n') : 'No changes'}
+                            Build URL: ${env.BUILD_URL}
+                         """,
+                         to: '${DEFAULT_RECIPIENTS}'
+            }
+        }
+    }
 }
