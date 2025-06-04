@@ -9,7 +9,7 @@ def random_email():
     return f"{random_string(5)}@example.com"
 
 class EcommerceUser(HttpUser):
-    host = "http://51.8.18.46:8080"
+    host = "http://4.156.107.102:8080"
     wait_time = between(1, 3)
 
     @task
