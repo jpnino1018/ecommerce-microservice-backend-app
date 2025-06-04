@@ -71,13 +71,15 @@ pipeline {
 
         stage('Deploy Core Services') {
             steps {
-                echo "Debugging current directory and file existence..."
-                sh "pwd" // Print current working directory
-                sh "ls -la" // List contents of current directory
-                sh "ls -la k8s" // List contents of 'k8s' directory
-                sh "ls -la k8s/dev" // List contents of 'k8s/dev' directory
-                sh "ls -la k8s/dev/namespace.yml" // Check specific file existence and permissions
-                sh 'kubectl apply -f k8s/core/ -n "$K8S_NAMESPACE"'
+                echo 'Debugging current directory and file existence...'
+                sh '''
+                    pwd
+                    ls -la
+                    ls -la k8s 
+                    ls -la k8s/dev 
+                    ls -la k8s/dev/namespace.yml 
+                    kubectl apply -f k8s/core/ -n "$K8S_NAMESPACE"
+                '''
             }
         }
 
