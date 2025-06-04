@@ -1,8 +1,52 @@
 pipeline {
     agent {
-        docker {
-            image 'mcr.microsoft.com/azure-cli'  // Imagen oficial con az y kubectl
-            args '-v /var/run/docker.sock:/var/run/docker.sock'  // si necesitas Docker dentro
+        kubernetes {
+            yaml '''
+                apiVersion: v1
+                kind: Pod
+                metadata:
+                  labels:
+                    app: jenkins-agent
+                spec:
+                  containers:
+                  - name: jnlp
+                    image: jenkins/inbound-agent:latest
+                  - name: maven
+                    image: maven:3.8.7-eclipse-temurin-11
+                    command: ['cat']
+                    tty: true
+                    resources:
+                      limits:
+                        memory: "2Gi"
+                        cpu: "1"
+                      requests:
+                        memory: "1Gi"
+                        cpu: "500m"
+                    volumeMounts:
+                    - name: maven-cache
+                      mountPath: /root/.m2
+                  - name: docker
+                    image: docker:20.10.23
+                    command: ['cat']
+                    tty: true
+                    volumeMounts:
+                    - name: docker-sock
+                      mountPath: /var/run/docker.sock
+                  - name: kubectl
+                    image: lachlanevenson/k8s-kubectl:latest
+                    command: ['cat']
+                    tty: true
+                  - name: azure-cli
+                    image: mcr.microsoft.com/azure-cli:latest
+                    command: ['cat']
+                    tty: true
+                  volumes:
+                  - name: maven-cache
+                    emptyDir: {}
+                  - name: docker-sock
+                    hostPath:
+                      path: /var/run/docker.sock
+            '''
         }
     }
 
@@ -22,89 +66,119 @@ pipeline {
 
         stage('Configure AKS Credentials') {
             steps {
-                sh '''
-                    az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing
-                '''
+                container('azure-cli') {
+                    script {
+                        // Ensure Azure CLI is logged in
+                        sh '''
+                            az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing
+                        '''
+                    }
+                }
             }
         }
 
         stage('Ensure Namespace Exists') {
             steps {
-                sh '''
-                    if ! kubectl get namespace "$K8S_NAMESPACE" &> /dev/null; then
-                      echo "Namespace '$K8S_NAMESPACE' does not exist. Creating it now..."
-                      kubectl create namespace "$K8S_NAMESPACE"
-                    else
-                      echo "Namespace '$K8S_NAMESPACE' already exists. Skipping creation."
-                    fi
-                '''
+                container('kubectl') {
+                    script {
+                        // Check if the namespace exists, create it if not
+                        sh '''
+                            kubectl get namespace "$K8S_NAMESPACE" || kubectl create namespace "$K8S_NAMESPACE"
+                        '''
+                    }
+                }
             }
         }
 
         stage('Deploy Service Discovery') {
             steps {
-                sh '''
-                    kubectl apply -f k8s/dev/service-discovery-deployment.yml -n "$K8S_NAMESPACE"
-                    kubectl wait --for=condition=Available deployment/service-discovery --timeout=300s -n "$K8S_NAMESPACE"
-                '''
+                container('kubectl') {
+                    script {
+                        // Ensure service discovery deployment is applied first
+                        sh '''
+                            kubectl apply -f k8s/dev/service-discovery-deployment.yml -n "$K8S_NAMESPACE"
+                            kubectl wait --for=condition=Available deployment/service-discovery --timeout=300s -n "$K8S_NAMESPACE"
+                        '''
+                    }
+                }
             }
         }
 
         stage('Deploy Core Services') {
             steps {
-                sh 'kubectl apply -f k8s/core/ -n "$K8S_NAMESPACE"'
+                container('kubectl') {
+                    script {
+                        sh 'kubectl apply -f k8s/core/ -n "$K8S_NAMESPACE"'
+                    }
+                }
             }
         }
 
         stage('Deploy Remaining Dev Services') {
             steps {
-                sh '''
-                    for file in k8s/dev/*.yml; do
-                      if [[ "$file" != *"service-discovery-deployment.yml" ]]; then
-                        kubectl apply -f "$file" -n "$K8S_NAMESPACE"
-                      fi
-                    done
-                '''
+                container('kubectl') {
+                    script {
+                        sh '''
+                            for file in k8s/dev/*.yml; do
+                              if [[ "$file" != *"service-discovery-deployment.yml" ]]; then
+                                kubectl apply -f "$file" -n "$K8S_NAMESPACE"
+                              fi
+                            done
+                        '''
+                    }
+                }
             }
         }
 
         stage('Wait for All Deployments') {
             steps {
-                sh '''
-                    for deployment in $(kubectl get deployments -n "$K8S_NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
-                      echo "Waiting for deployment/$deployment..."
-                      kubectl wait --for=condition=Available deployment/"$deployment" --timeout=300s -n "$K8S_NAMESPACE" || {
-                        echo "Deployment $deployment failed to become ready. Exiting."
-                        exit 1
-                      }
-                    done
-                '''
+                container('kubectl') {
+                    script {
+                        sh '''
+                            for deployment in $(kubectl get deployments -n "$K8S_NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
+                                echo "Waiting for deployment/$deployment..."
+                                kubectl wait --for=condition=Available deployment/"$deployment" --timeout=300s -n "$K8S_NAMESPACE" || {
+                                    echo "Deployment $deployment failed to become ready. Exiting."
+                                    exit 1
+                                }
+                            done
+                        '''
+                    }
+                }
             }
         }
 
         stage('Run Newman Integration Tests') {
             steps {
-                sh '''
-                    kubectl apply -f k8s/newman/newman-job.yml -n "$K8S_NAMESPACE"
-                    kubectl wait --for=condition=complete job/newman-integration-tests --timeout=600s -n "$K8S_NAMESPACE" || {
-                        echo "Newman Job failed or timed out. Exiting."
-                        exit 1
-                    }
+                container('kubectl') {
+                    script {
+                        sh '''
+                            kubectl apply -f k8s/newman/newman-job.yml -n "$K8S_NAMESPACE"
+                            kubectl wait --for=condition=complete job/newman-integration-tests --timeout=600s -n "$K8S_NAMESPACE" || {
+                                echo "Newman Job failed or timed out. Exiting."
+                                exit 1
+                            }
 
-                    NEWMAN_POD=$(kubectl get pods -n "$K8S_NAMESPACE" -l job-name=newman-integration-tests -o jsonpath='{.items[0].metadata.name}')
-                    if [ -n "$NEWMAN_POD" ]; then
-                      echo "Newman Job completed. Fetching logs..."
-                      kubectl logs "$NEWMAN_POD" -n "$K8S_NAMESPACE"
-                    else
-                      echo "Newman Job pod not found."
-                    fi
-                '''
+                            NEWMAN_POD=$(kubectl get pods -n "$K8S_NAMESPACE" -l job-name=newman-integration-tests -o jsonpath='{.items[0].metadata.name}')
+                            if [ -n "$NEWMAN_POD" ]; then
+                            echo "Newman Job completed. Fetching logs..."
+                            kubectl logs "$NEWMAN_POD" -n "$K8S_NAMESPACE"
+                            else
+                            echo "Newman Job pod not found."
+                            fi
+                        '''
+                    }
+                }
             }
         }
 
         stage('Clean Up Newman Job') {
             steps {
-                sh 'kubectl delete job newman-integration-tests -n "$K8S_NAMESPACE" || true'
+                container('kubectl') {
+                    script {
+                        sh 'kubectl delete job newman-integration-tests -n "$K8S_NAMESPACE" || true'
+                    }
+                }
             }
         }
     }
