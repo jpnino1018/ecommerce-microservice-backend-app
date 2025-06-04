@@ -34,6 +34,10 @@ spec:
           value: http://service-discovery:8761/eureka/
         - name: EUREKA_INSTANCE
           value: "api-gateway"
+        - name: EUREKA_INSTANCE_HOSTNAME
+          value: api-gateway
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "false"
 ---
 apiVersion: v1
 kind: Service
