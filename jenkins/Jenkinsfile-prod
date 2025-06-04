@@ -4,9 +4,9 @@ pipeline {
     environment {
         RESOURCE_GROUP = 'ecommerce-rg'
         AKS_NAME = 'ecommerce-aks'
-        K8S_NAMESPACE = 'master'
+        K8S_NAMESPACE = 'prod'
         VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
-        DOCKER_REGISTRY = 'your-registry.io'
+        DOCKER_REGISTRY = 'jpnino.io'
     }
 
     stages {
