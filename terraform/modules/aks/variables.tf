@@ -27,5 +27,5 @@ variable "node_count" {
 variable "vm_size" {
   description = "Tamaño de las VMs del pool"
   type        = string
-  default     = "Standard_DS2_v2"
+  default     = "Standard_B2ms"
 }

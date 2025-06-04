@@ -2,65 +2,114 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USERNAME = 'jpnino'
-        IMAGE_TAG = "latest"
+        RESOURCE_GROUP = "ecommerce-rg"
+        AKS_NAME = "ecommerce-aks"
+        K8S_NAMESPACE = "dev"
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Run Unit Tests') {
             steps {
-                git url: 'https://github.com/your-org/your-repo.git', branch: 'develop'
+                echo 'Running unit tests...'
+                sh 'mvn test'
             }
         }
 
-        stage('Unit & Integration Tests') {
+        stage('Configure AKS Credentials') {
             steps {
-                sh './gradlew test'
+                sh '''
+                    az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing
+                '''
             }
         }
 
-        stage('End-to-End Tests') {
+        stage('Ensure Namespace Exists') {
             steps {
-                sh 'newman run e2e-tests/newman/ecommerce-e2e.collection.json'
+                sh '''
+                    if ! kubectl get namespace "$K8S_NAMESPACE" &> /dev/null; then
+                      echo "Namespace '$K8S_NAMESPACE' does not exist. Creating it now..."
+                      kubectl create namespace "$K8S_NAMESPACE"
+                    else
+                      echo "Namespace '$K8S_NAMESPACE' already exists. Skipping creation."
+                    fi
+                '''
             }
         }
 
-        stage('Docker Build & Push') {
+        stage('Deploy Service Discovery') {
             steps {
-                script {
-                    def services = [
-                        "api-gateway",
-                        "favourite-service",
-                        "order-service",
-                        "payment-service",
-                        "product-service",
-                        "shipping-service",
-                        "user-service",
-                        "cloud-config"
+                sh '''
+                    kubectl apply -f k8s/dev/service-discovery-deployment.yml -n "$K8S_NAMESPACE"
+                    kubectl wait --for=condition=Available deployment/service-discovery --timeout=300s -n "$K8S_NAMESPACE"
+                '''
+            }
+        }
 
-                    ]
+        stage('Deploy Core Services') {
+            steps {
+                sh 'kubectl apply -f k8s/core/ -n "$K8S_NAMESPACE"'
+            }
+        }
 
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+        stage('Deploy Remaining Dev Services') {
+            steps {
+                sh '''
+                    for file in k8s/dev/*.yml; do
+                      if [[ "$file" != *"service-discovery-deployment.yml" ]]; then
+                        kubectl apply -f "$file" -n "$K8S_NAMESPACE"
+                      fi
+                    done
+                '''
+            }
+        }
 
-                        services.each { svc ->
-                            sh "docker build -t $DOCKERHUB_USERNAME/${svc}:${IMAGE_TAG} ${svc}/"
-                            sh "docker push $DOCKERHUB_USERNAME/${svc}:${IMAGE_TAG}"
-                        }
+        stage('Wait for All Deployments') {
+            steps {
+                sh '''
+                    for deployment in $(kubectl get deployments -n "$K8S_NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
+                      echo "Waiting for deployment/$deployment..."
+                      kubectl wait --for=condition=Available deployment/"$deployment" --timeout=300s -n "$K8S_NAMESPACE" || {
+                        echo "Deployment $deployment failed to become ready. Exiting."
+                        exit 1
+                      }
+                    done
+                '''
+            }
+        }
+
+        stage('Run Newman Integration Tests') {
+            steps {
+                sh '''
+                    kubectl apply -f k8s/newman/newman-job.yml -n "$K8S_NAMESPACE"
+                    kubectl wait --for=condition=complete job/newman-integration-tests --timeout=600s -n "$K8S_NAMESPACE" || {
+                        echo "Newman Job failed or timed out. Exiting."
+                        exit 1
                     }
-                }
+
+                    NEWMAN_POD=$(kubectl get pods -n "$K8S_NAMESPACE" -l job-name=newman-integration-tests -o jsonpath='{.items[0].metadata.name}')
+                    if [ -n "$NEWMAN_POD" ]; then
+                      echo "Newman Job completed. Fetching logs..."
+                      kubectl logs "$NEWMAN_POD" -n "$K8S_NAMESPACE"
+                    else
+                      echo "Newman Job pod not found."
+                    fi
+                '''
             }
         }
 
-        stage('Deploy to AKS Dev') {
+        stage('Clean Up Newman Job') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig-dev', variable: 'KUBECONFIG_FILE')]) {
-                    sh '''
-                        export KUBECONFIG=$KUBECONFIG_FILE
-                        kubectl apply -f k8s/dev/
-                    '''
-                }
+                sh 'kubectl delete job newman-integration-tests -n "$K8S_NAMESPACE" || true'
             }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Pipeline failed. Check logs for details.'
+        }
+        success {
+            echo 'Deployment and integration tests completed successfully.'
         }
     }
 }

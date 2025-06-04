@@ -11,11 +11,13 @@ K8S_NAMESPACE="dev" # Define your target namespace
 az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing
 
 echo "Ensuring Kubernetes namespace '$K8S_NAMESPACE' exists..."
+
 # Check if the namespace exists, if not, create it.
 if ! kubectl get namespace "$K8S_NAMESPACE" &> /dev/null; then
   echo "Namespace '$K8S_NAMESPACE' does not exist. Creating it now..."
   kubectl create namespace "$K8S_NAMESPACE"
   echo "Namespace '$K8S_NAMESPACE' created successfully."
+
 else
   echo "Namespace '$K8S_NAMESPACE' already exists. Skipping creation."
 fi
@@ -71,7 +73,6 @@ NEWMAN_POD=$(kubectl get pods -n "$K8S_NAMESPACE" -l job-name=newman-integration
 if [ -n "$NEWMAN_POD" ]; then
   echo "Newman Job completed. Fetching logs from pod: $NEWMAN_POD"
   kubectl logs "$NEWMAN_POD" -n "$K8S_NAMESPACE"
-  # You might also want to copy the JUnit report out of the pod
   # kubectl cp "$NEWMAN_POD":/newman-results/report.xml ./newman-report.xml -n "$K8S_NAMESPACE"
   # echo "JUnit report copied to ./newman-report.xml"
 else
