@@ -1231,3 +1231,341 @@ Para la ejecución de las pruebas de estrés, usamos Locust:
 Los charts nos indican el desempeño de la aplicación:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/a1724272-3fe3-4b32-aa92-2fb420cd23d1/image.png)![](https://t9013833367.p.clickup-attachments.com/t9013833367/edb1e91e-9efe-404d-92cb-a568bd73cbaa/image.png)
+
+---
+
+## Punto 4: Pipeline de stage
+
+En este punto, esencialmente, debemos repetir lo que hicimos con el pipeline de `dev`, pues ese ya estaba haciendo el despliegue en un ambiente. 
+
+Para esto, reusamos la lógica del pipeline mencionado, y lo modificamos un poco:
+
+```yaml
+pipeline {
+    agent any
+
+    environment {
+        RESOURCE_GROUP = 'ecommerce-rg'
+        AKS_NAME = 'ecommerce-aks'
+        K8S_NAMESPACE = 'stage'
+    }
+
+    stages {
+
+        stage('Login to Azure') {
+            steps {
+                withCredentials([azureServicePrincipal('azure-credentials')]) {
+                    sh '''
+                        echo "Logging into Azure CLI..."
+                        az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID
+                        az account show
+                    '''
+                }
+            }
+        }
+
+        stage('Login to Docker') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                echo 'Running unit tests...'
+                sh './mvnw test'
+            }
+        }
+
+        stage('Configure AKS Credentials') {
+            steps {
+                sh '''
+                    az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing
+                '''
+            }
+        }
+
+        stage('Ensure Namespace Exists') {
+            steps {
+                sh '''
+                    pwd
+                    ls -la
+                    ls -la k8s
+                    ls -la k8s/stage
+                    kubectl apply -f k8s/"$K8S_NAMESPACE"/namespace.yml
+                '''
+            }
+        }
+
+        stage('Deploy Service Discovery') {
+            steps {
+                sh '''
+                    kubectl apply -f k8s/"$K8S_NAMESPACE"/service-discovery-deployment.yml -n "$K8S_NAMESPACE"
+                    kubectl wait --for=condition=Available deployment/service-discovery --timeout=300s -n "$K8S_NAMESPACE"
+                '''
+            }
+        }
+
+        stage('Deploy Core Services') {
+            steps {
+                sh 'kubectl apply -f k8s/core/ -n "$K8S_NAMESPACE"'
+            }
+        }
+
+        stage('Deploy Remaining Dev Services') {
+            steps {
+                sh '''
+                    for file in k8s/"$K8S_NAMESPACE"/*.yml; do
+                        case "$file" in
+                            *service-discovery-deployment.yml)
+                                echo "Skipping $file..."
+                                ;;
+                            *)
+                                echo "Applying $file..."
+                                kubectl apply -f "$file" -n "$K8S_NAMESPACE"
+                                ;;
+                        esac
+                    done
+                '''
+            }
+        }
+
+
+        stage('Wait for All Deployments') {
+            steps {
+                sh '''
+                    echo "Waiting for all deployments to become ready..."
+                    for deployment in $(kubectl get deployments -n "$K8S_NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
+                        echo "Waiting for $deployment..."
+                        kubectl wait --for=condition=Available deployment/"$deployment" --timeout=300s -n "$K8S_NAMESPACE" || {
+                            echo "Deployment $deployment failed."
+                            exit 1
+                        }
+                    done
+                '''
+            }
+        }
+
+        stage('Run Newman Integration Tests') {
+            steps {
+                sh '''
+                    echo "Waiting for 5 minutes before starting Newman integration tests..."
+                    sleep 300
+                    kubectl apply -f k8s/newman/newman-job.yml -n "$K8S_NAMESPACE"
+                    kubectl wait --for=condition=complete job/newman-integration-tests --timeout=300s -n "$K8S_NAMESPACE" || {
+                        echo "Newman tests failed or timed out."
+                        exit 1
+                    }
+
+                    NEWMAN_POD=$(kubectl get pods -n "$K8S_NAMESPACE" -l job-name=newman-integration-tests -o jsonpath='{.items[0].metadata.name}')
+                    if [ -n "$NEWMAN_POD" ]; then
+                        echo "Fetching Newman test logs..."
+                        kubectl logs "$NEWMAN_POD" -n "$K8S_NAMESPACE"
+                    else
+                        echo "Newman pod not found."
+                    fi
+                '''
+            }
+        }
+
+        stage('Clean Up Newman Job') {
+            steps {
+                sh 'kubectl delete job newman-integration-tests -n "$K8S_NAMESPACE" || true'
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning up workspace...'
+            deleteDir()
+        }
+
+        success {
+            echo '✅ Deployment and integration tests completed successfully.'
+        }
+
+        failure {
+            echo '❌ Pipeline failed. Check logs above.'
+        }
+    }
+}
+```
+
+--- 
+
+## Punto 5: Pipeline de master
+
+Para este punto también usaremos de referencia los pipelines que usamos en los anteriores putos. Sin embargo, acá agregamos varios cambios para hacer el pipeline más robusto.
+
+Así quedó:
+
+```yaml
+pipeline {
+    agent any
+
+    environment {
+        RESOURCE_GROUP = 'ecommerce-rg'
+        AKS_NAME = 'ecommerce-aks'
+        K8S_NAMESPACE = 'master'
+        VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
+        DOCKER_REGISTRY = 'your-registry.io'
+    }
+
+    stages {
+        stage('Initialize') {
+            steps {
+                script {
+                    currentBuild.displayName = "#${BUILD_NUMBER} - ${VERSION}"
+                }
+            }
+        }
+
+        stage('Checkout & Setup') {
+            steps {
+                checkout scm
+                sh 'git fetch --tags'
+            }
+        }
+
+        stage('Login to Azure') {
+            steps {
+                withCredentials([azureServicePrincipal('azure-credentials')]) {
+                    sh '''
+                        az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID
+                        az account show
+                    '''
+                }
+            }
+        }
+
+        stage('Login to Docker') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin $DOCKER_REGISTRY
+                    '''
+                }
+            }
+        }
+
+        stage('Build & Unit Tests') {
+            steps {
+                sh './mvnw clean package'
+                junit '**/target/surefire-reports/*.xml'
+                archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    def services = ['service1', 'service2', 'service3'] // Reemplazar con tus microservicios
+                    services.each { service ->
+                        sh """
+                            docker build -t $DOCKER_REGISTRY/${service}:${VERSION} -f ${service}/Dockerfile ${service}/
+                            docker push $DOCKER_REGISTRY/${service}:${VERSION}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Generate Release Notes') {
+            steps {
+                script {
+                    def changelog = sh(script: 'git log --pretty=format:"%h - %an, %ar : %s" --since="1 week ago"', returnStdout: true).trim()
+                    def releaseNotes = """
+                    Release ${VERSION} - ${new Date().format('yyyy-MM-dd')}
+                    =====================================
+                    
+                    Changes:
+                    ${changelog}
+                    
+                    Deployment Notes:
+                    - Kubernetes Namespace: ${K8S_NAMESPACE}
+                    - Cluster: ${AKS_NAME}
+                    - Version: ${VERSION}
+                    """
+                    writeFile file: 'RELEASE_NOTES.md', text: releaseNotes
+                    archiveArtifacts artifacts: 'RELEASE_NOTES.md', fingerprint: true
+                }
+            }
+        }
+
+        stage('Configure Kubernetes') {
+            steps {
+                sh """
+                    az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing
+                    kubectl apply -f k8s/master/namespace.yml
+                """
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    def services = ['user-service', 'product-service', 'order-service', 'payment-service', 'favourite-service', 'shipping-service']
+                    services.each { service ->
+                        sh """
+                            kubectl apply -f k8s/master/${service}-deployment.yml -n $K8S_NAMESPACE
+                            kubectl set image deployment/${service} ${service}=$DOCKER_REGISTRY/${service}:${VERSION} -n $K8S_NAMESPACE
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('System Tests') {
+            steps {
+                sh """
+                    kubectl apply -f k8s/newman/newman-job.yml -n $K8S_NAMESPACE
+                    kubectl wait --for=condition=complete job/newman-integration-tests --timeout=300s -n $K8S_NAMESPACE || {
+                        echo "System tests failed"
+                        exit 1
+                    }
+                    
+                    NEWMAN_POD=$(kubectl get pods -n $K8S_NAMESPACE -l job-name=newman-integration-tests -o jsonpath='{.items[0].metadata.name}')
+                    kubectl logs $NEWMAN_POD -n $K8S_NAMESPACE > newman-logs.txt
+                """
+                archiveArtifacts artifacts: 'newman-logs.txt', fingerprint: true
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh """
+                    for deployment in $(kubectl get deployments -n $K8S_NAMESPACE -o jsonpath='{.items[*].metadata.name}'); do
+                        kubectl rollout status deployment/$deployment -n $K8S_NAMESPACE --timeout=300s
+                    done
+                """
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                // Limpieza
+                sh 'kubectl delete job newman-integration-tests -n $K8S_NAMESPACE || true'
+                
+                // Notificación
+                if (currentBuild.result == 'SUCCESS') {
+                    emailext subject: "SUCCESS: Pipeline ${currentBuild.fullDisplayName}",
+                            body: "Deployment to master completed successfully.\n\n${readFile('RELEASE_NOTES.md')}",
+                            to: 'devops-team@yourcompany.com'
+                } else {
+                    emailext subject: "FAILED: Pipeline ${currentBuild.fullDisplayName}",
+                            body: "Pipeline failed. Please check: ${BUILD_URL}",
+                            to: 'devops-team@yourcompany.com'
+                }
+            }
+            deleteDir()
+        }
+    }
+}
+```
