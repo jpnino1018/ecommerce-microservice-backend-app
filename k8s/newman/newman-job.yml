@@ -2,7 +2,6 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: newman-integration-tests
-  namespace: dev # Ensure this matches your deployment namespace
 spec:
   template:
     metadata:

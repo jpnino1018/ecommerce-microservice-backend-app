@@ -110,8 +110,8 @@ pipeline {
         stage('Run Newman Integration Tests') {
             steps {
                 sh '''
-                    echo "Waiting for 5 minutes before starting Newman integration tests..."
-                    sleep 300
+                    echo "Waiting for 2 minutes before starting Newman integration tests..."
+                    sleep 120
                     kubectl apply -f k8s/newman/newman-job.yml -n "$K8S_NAMESPACE"
                     kubectl wait --for=condition=complete job/newman-integration-tests --timeout=300s -n "$K8S_NAMESPACE" || {
                         echo "Newman tests failed or timed out."
