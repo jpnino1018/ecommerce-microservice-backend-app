@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: newman-integration-tests
+  namespace: dev # Ensure this matches your deployment namespace
+spec:
+  template:
+    metadata:
+      name: newman-integration-tests
+    spec:
+      restartPolicy: Never # Critical: Don't restart if tests fail
+      containers:
+        - name: newman
+          image: jpnino/newman:latest # Use your custom image here
+          # command and args are now defined in the Dockerfile's ENTRYPOINT/CMD
+          volumeMounts:
+            - name: newman-reports
+              mountPath: /etc/newman/reports # Mount the reports volume to the path defined in your Dockerfile
+      volumes:
+        - name: newman-reports
+          emptyDir: {} # A temporary directory to store the report.html
+  backoffLimit: 0 # Do not retry if the job fails (tests failed)

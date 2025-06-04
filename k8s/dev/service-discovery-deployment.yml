@@ -24,6 +24,12 @@ spec:
           value: http://zipkin:9411
         - name: SPRING_CONFIG_IMPORT
           value: optional:configserver:http://cloud-config:9296/
+        - name: EUREKA_INSTANCE
+          value: "service-discovery"
+        - name: EUREKA_INSTANCE_HOSTNAME
+          value: service-discovery
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "false"
 ---
 apiVersion: v1
 kind: Service

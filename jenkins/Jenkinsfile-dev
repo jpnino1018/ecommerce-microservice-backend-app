@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_USERNAME = 'jpnino'
+        IMAGE_TAG = "latest"
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git url: 'https://github.com/your-org/your-repo.git', branch: 'develop'
+            }
+        }
+
+        stage('Unit & Integration Tests') {
+            steps {
+                sh './gradlew test'
+            }
+        }
+
+        stage('End-to-End Tests') {
+            steps {
+                sh 'newman run e2e-tests/newman/ecommerce-e2e.collection.json'
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    def services = [
+                        "api-gateway",
+                        "favourite-service",
+                        "order-service",
+                        "payment-service",
+                        "product-service",
+                        "shipping-service",
+                        "user-service",
+                        "cloud-config"
+
+                    ]
+
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+
+                        services.each { svc ->
+                            sh "docker build -t $DOCKERHUB_USERNAME/${svc}:${IMAGE_TAG} ${svc}/"
+                            sh "docker push $DOCKERHUB_USERNAME/${svc}:${IMAGE_TAG}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to AKS Dev') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig-dev', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        kubectl apply -f k8s/dev/
+                    '''
+                }
+            }
+        }
+    }
+}
