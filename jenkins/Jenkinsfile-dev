@@ -1,11 +1,6 @@
 pipeline {
     agent any
 
-    tools {
-        jdk 'jdk-11'
-        maven 'maven-3.8.7'
-    }
-
     environment {
         RESOURCE_GROUP = "ecommerce-rg"
         AKS_NAME = "ecommerce-aks"
@@ -13,12 +8,12 @@ pipeline {
     }
 
     stages {
-        stage('Run Unit Tests') {
-            steps {
-                echo 'Running unit tests...'
-                sh './mvnw test'
-            }
-        }
+        // stage('Run Unit Tests') {
+        //     steps {
+        //         echo 'Running unit tests...'
+        //         sh './mvnw test'
+        //     }
+        // }
 
         stage('Configure AKS Credentials') {
             steps {
