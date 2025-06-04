@@ -56,6 +56,9 @@ pipeline {
             steps {
                 sh '''
                     pwd
+                    ls -la
+                    ls -la k8s
+                    ls -la k8s/dev
                     kubectl apply -f k8s/dev/namespace.yml
                 '''
             }
