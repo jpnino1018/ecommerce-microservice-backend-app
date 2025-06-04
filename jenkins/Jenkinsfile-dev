@@ -55,12 +55,7 @@ pipeline {
         stage('Ensure Namespace Exists') {
             steps {
                 sh '''
-                    if ! kubectl get namespace "$K8S_NAMESPACE" &> /dev/null; then
-                        echo "Creating namespace: $K8S_NAMESPACE"
-                        kubectl create namespace "$K8S_NAMESPACE"
-                    else
-                        echo "Namespace $K8S_NAMESPACE already exists."
-                    fi
+                    kubectl apply -f k8s/dev/namespace.yml
                 '''
             }
         }

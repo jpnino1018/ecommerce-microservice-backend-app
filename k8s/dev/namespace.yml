@@ -1,0 +1,5 @@
+# k8s/namespace-dev.yml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
