@@ -9,12 +9,6 @@ pipeline {
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                git credentialsId: 'github-credentials', url: 'https://github.com/jpnino1018/ecommerce-microservice-backend-app.git'
-            }
-        }
-
         stage('Login to Azure') {
             steps {
                 withCredentials([azureServicePrincipal('azure-credentials')]) {
