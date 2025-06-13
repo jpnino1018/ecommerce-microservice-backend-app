@@ -27,6 +27,14 @@ resilience4j:
         sliding-window-size: 10
         wait-duration-in-open-state: 5s
         sliding-window-type: COUNT_BASED
+  retry:
+    instances:
+      userService:
+        max-attempts: 3
+        wait-duration: 1s
+      productService:
+        max-attempts: 3
+        wait-duration: 1s
 
 management:
   health:
