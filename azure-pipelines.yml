@@ -1,22 +1,26 @@
-
 trigger:
-- develop
-- stage
-- master
+  branches:
+    include:
+      - main
+      - dev
 
 pool:
   vmImage: ubuntu-latest
 
 steps:
-- task: Maven@3
-  inputs:
-    mavenPomFile: 'pom.xml'
-    mavenOptions: '-Xmx3072m'
-    javaHomeOption: 'JDKVersion'
-    jdkVersionOption: '11'
-    jdkArchitectureOption: 'x64'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    goals: 'package'
+  - checkout: self
 
-
+  - task: Bash@3
+    displayName: 'Run semantic-release'
+    inputs:
+      targetType: 'inline'
+      script: |
+        docker run --rm \
+          -v $(System.DefaultWorkingDirectory):/repo \
+          -w /repo \
+          -e GIT_AUTHOR_NAME="azure-devops-bot" \
+          -e GIT_AUTHOR_EMAIL="yulukeitor@gmail.com" \
+          -e GIT_COMMITTER_NAME="azure-devops-bot" \
+          -e GIT_COMMITTER_EMAIL="yulukeitor@gmail.com" \
+          -e GITHUB_TOKEN=$(GH_TOKEN) \
+          ghcr.io/semantic-release/semantic-release:latest
