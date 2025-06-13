@@ -63,6 +63,7 @@
   - [Punto 8: Seguridad](#punto-8-seguridad)
   - [Punto 9: Documentación y Presentación](#punto-9-documentación-y-presentación)
 
+
 ## Microservicios
 
 Hay que escoger, al menos, 6 microservicios **(que se comuniquen entre ellos)** para el desarrollo del taller.
@@ -2318,6 +2319,159 @@ stages:
             displayName: 'Run Terraform with PowerShell'
 ```
 
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/f3e477de-a731-494c-8e70-142e41044196/image.png)
+
+  
+
+Para el **despliegue** de los microservicios se movió el pipeline de Jenkins a Actions. Este pipeline automatiza el proceso de integración continua y despliegue continuo (CI/CD) de los microservicios sobre el clúster de Kubernetes en Azure (AKS), incluyendo pruebas unitarias y pruebas de integración con Newman. Se activa cuando hay cambios en las ramas `dev` o `main`.
+
+  
+
+El flujo consta de los siguientes pasos principales:
+
+1. **Clonación del repositorio**
+2. **Autenticación con Docker Hub**
+3. **Pruebas unitarias**
+4. **Conexión con el clúster de AKS**
+5. **Despliegue por fases (namespace, servicios core, microservicios restantes)**
+6. **Pruebas de integración con Newman**
+7. **Limpieza del entorno**
+
+  
+
+Dadas las limitaciones de la cuenta de Azure que estoy usando, no pude hacer el login convencional a Azure, por lo que tuve que hacerlo de otra manera. con este comando generé un archivo de configuración de `kubectl`:
+
+```dsconfig
+az aks get-credentials --resource-group aks-rg --name aks-cluster
+```
+
+  
+
+Y este paso crea el archivo de configuración `kubeconfig` a partir de un secreto previamente cargado, lo que permite ejecutar comandos `kubectl` directamente desde el pipeline:
+
+```yaml
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Docker login
+        run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+```
+
+  
+
+El pipeline final es:
+
+```yaml
+name: CI/CD to AKS
+
+on:
+  push:
+    branches:
+      - dev
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      K8S_NAMESPACE: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_DATA }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Docker login
+        run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+    #   - name: Run unit tests
+    #     run: ./mvnw test
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl apply -f k8s/dev/namespace.yml
+
+      - name: Deploy Service Discovery
+        run: |
+          kubectl apply -f k8s/dev/service-discovery-deployment.yml -n $K8S_NAMESPACE
+          kubectl wait --for=condition=Available deployment/service-discovery --timeout=300s -n $K8S_NAMESPACE
+
+      - name: Deploy Core Services
+        run: |
+          kubectl apply -f k8s/core/ -n $K8S_NAMESPACE
+
+      - name: Deploy Remaining Dev Services
+        run: |
+          for file in k8s/dev/*.yml; do
+            if [[ "$file" == *service-discovery-deployment.yml ]]; then
+              echo "Skipping $file..."
+            else
+              echo "Applying $file..."
+              kubectl apply -f "$file" -n $K8S_NAMESPACE
+            fi
+          done
+
+      - name: Wait for All Deployments
+        run: |
+          echo "Waiting for all deployments to become ready..."
+          for deployment in $(kubectl get deployments -n $K8S_NAMESPACE -o jsonpath='{.items[*].metadata.name}'); do
+            echo "Waiting for $deployment..."
+            kubectl wait --for=condition=Available deployment/$deployment --timeout=300s -n $K8S_NAMESPACE || {
+              echo "Deployment $deployment failed."
+              exit 1
+            }
+          done
+
+      - name: List Deployments, Pods and Services
+        run: |
+          echo "Deployments in namespace $K8S_NAMESPACE:"
+          kubectl get deployments -n $K8S_NAMESPACE
+
+          echo "Pods in namespace $K8S_NAMESPACE:"
+          kubectl get pods -n $K8S_NAMESPACE -o wide
+
+          echo "Services in namespace $K8S_NAMESPACE:"
+          kubectl get svc -n $K8S_NAMESPACE
+
+      - name: Run Newman Integration Tests
+        run: |
+          echo "Waiting for 5 minutes before starting Newman integration tests..."
+          sleep 300
+          kubectl apply -f k8s/newman/newman-job.yml -n $K8S_NAMESPACE
+          kubectl wait --for=condition=complete job/newman-integration-tests --timeout=300s -n $K8S_NAMESPACE || {
+            echo "Newman tests failed or timed out."
+            exit 1
+          }
+          NEWMAN_POD=$(kubectl get pods -n $K8S_NAMESPACE -l job-name=newman-integration-tests -o jsonpath='{.items[0].metadata.name}')
+          if [ -n "$NEWMAN_POD" ]; then
+            echo "Fetching Newman test logs..."
+            kubectl logs "$NEWMAN_POD" -n $K8S_NAMESPACE
+          else
+            echo "Newman pod not found."
+          fi
+
+      - name: Clean Up Newman Job
+        run: kubectl delete job newman-integration-tests -n $K8S_NAMESPACE || true
+
+
+```
+
+  
+
+Los servicios quedaron funcionando correctamente:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/d9f7f1c0-4807-42f8-bed3-5849c16c6702/image.png)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/c55bd000-9e48-498f-b2ef-41e274e3c282/Imagen%20de%20WhatsApp%202025-06-13%20a%20las%2010.48.04_33bdd178.jpg)
+
   
 
 ### Ambientes separados
@@ -2331,6 +2485,50 @@ Se han implementado ambientes `dev`, `stage` y `prod`. Esto se hizo mediante el 
   
 
 ### Trivy
+
+ Trivy fue implementado dentro del pipeline de despliegue, para escanear todas las imágenes antes de ser desplegadas. Lo ideal sería que fallara el despliegue en caso de encontrar vulnerabilidades altas o severas, pero no vamos a hacerlo porque pues no podemos corregirlas todas.
+
+  
+
+Agregamos estos pasos:
+
+```yaml
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Scan Docker image with Trivy
+        run: |
+          IMAGES=(
+            "jpnino/api-gateway:latest"
+            "jpnino/service-discovery:latest"
+            "jpnino/user-service:latest"
+            "jpnino/product-service:latest"
+            "jpnino/order-service:latest"
+            "jpnino/favourite-service:latest"
+            "jpnino/shipping-service:latest"
+            "jpnino/payment-service:latest"
+          )
+          for IMAGE in "${IMAGES[@]}"; do
+            echo "🔎 Escaneando imagen $IMAGE..."
+            trivy image --severity HIGH,CRITICAL $IMAGE || echo "⚠️ Vulnerabilidades encontradas en $IMAGE"
+          done
+```
+
+  
+
+En vez de cancelar el despliegue, nos avisa que encontró vulnerabilidades:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/fe9a949b-a3e9-4de8-b326-eeca6a9f8a22/image.png)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/7f5f1e0e-bdc4-4fb8-9b1f-6c5499bd83fc/image.png)
+
+  
 
 ### Versionado semántico automático
 
@@ -2432,6 +2630,56 @@ El pipeline de despliegue de la infra se ha configurado para notificar su fallo 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/36959b7c-fcc0-47bd-8718-c36b38e826d8/Imagen%20de%20WhatsApp%202025-06-13%20a%20las%2001.00.23_b647e474.jpg)
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/5944f9fe-b2b8-4894-ad39-fef493f0c7f6/Imagen%20de%20WhatsApp%202025-06-13%20a%20las%2001.00.52_2eab242a.jpg)
+
+También se **configuraron las notificaciones en el pipeline de despliegue de los microservicios**, pero esta vez usando **Discord**. Se hizo así:
+
+1. Se **creó un server** para esto.
+2. Se **creó un canal**.
+3. Se configuró un webhook para poder usarlo:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/453789e4-680a-458c-860e-d625c56a980d/image.png)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/ddbe0d12-dc88-4bf4-a676-308bec79e7c8/image.png)
+
+  
+
+4. Se configuró un secret con la URL del hook:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/3fad0c8b-f0ea-46c7-8ba9-3fd9f228fbef/image.png)
+
+  
+
+5. Se agregó un paso al pipeline, para la notificación:
+
+```yaml
+      - name: Notify Success on Discord
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"content\": \"✅ Despliegue completado correctamente en \`${{ github.ref }}\` para \`${{ github.repository }}\`\"}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Notify Failure on Discord
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"content\": \"❌ Falló el despliegue en \`${{ github.ref }}\` para \`${{ github.repository }}\`. Revisa el log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+
+```
+
+  
+
+Y ya quedó:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/32ce7099-e96a-4abc-9eee-6e9a69f04df5/image.png)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/93812394-5ddc-4ce0-b0b0-049a854a1e78/image.png)
+
+  
 
 ### Aprobaciones para despliegues a producción
 
