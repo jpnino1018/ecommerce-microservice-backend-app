@@ -1,28 +1,39 @@
-name: Semantic Release
+name: release
 
 on:
   push:
     branches:
       - master
-      - dev
 
 jobs:
   release:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '18'
 
       - name: Install dependencies
-        run: npm install semantic-release @semantic-release/changelog @semantic-release/git @semantic-release/github -D
+        run: npm ci
 
-      - name: Run semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+      - name: Run Semantic Release
+        id: semantic
+        run: |
+          npx semantic-release > release-output.txt
+          version=$(grep -oP 'Published release \K[0-9]+\.[0-9]+\.[0-9]+' release-output.txt)
+          echo "VERSION=$version" >> $GITHUB_ENV
+
+      - name: Write version to VERSION file
+        if: env.VERSION != ''
+        run: echo "${{ env.VERSION }}" > VERSION
+
+      - name: Commit VERSION file
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: update VERSION file to ${{ env.VERSION }}"
+          git push
