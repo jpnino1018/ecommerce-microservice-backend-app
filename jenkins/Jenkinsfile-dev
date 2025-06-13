@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        RESOURCE_GROUP = 'ecommerce-rg'
-        AKS_NAME = 'ecommerce-aks'
+        RESOURCE_GROUP = 'ecommerce-rg-dev'
+        AKS_NAME = 'ecommerce-aks-dev'
         K8S_NAMESPACE = 'dev'
     }
 

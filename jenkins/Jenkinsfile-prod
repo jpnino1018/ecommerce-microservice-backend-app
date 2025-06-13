@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        RESOURCE_GROUP = 'ecommerce-rg'
-        AKS_NAME = 'ecommerce-aks'
+        RESOURCE_GROUP = 'ecommerce-rg-prod'
+        AKS_NAME = 'ecommerce-aks-prod'
         K8S_NAMESPACE = 'prod'
         VERSION = sh(script: 'git describe --tags --always', returnStdout: true).trim()
         DOCKER_REGISTRY = 'jpnino.io'
