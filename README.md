@@ -1,5 +1,56 @@
 # Notas: IngesoftV Taller 2
 
+## Tabla de contenido
+
+- [Notas: IngesoftV Taller 2](#notas-ingesoftv-taller-2)
+  - [Microservicios](#microservicios)
+  - [Punto 1: Configuración](#punto-1-configuración)
+    - [Jenkins](#jenkins)
+    - [Docker](#docker)
+    - [Kubernetes](#kubernetes)
+      - [Minikube](#minikube)
+      - [AKS](#aks)
+    - [Helm](#helm)
+  - [Punto 2: Pipeline para `dev`](#punto-2-pipeline-para-dev)
+    - [Pipeline](#pipeline)
+    - [Eureka](#eureka)
+  - [Punto 3: Pruebas](#punto-3-pruebas)
+    - [Pruebas Unitarias](#pruebas-unitarias)
+      - [Servicio: user-service](#servicio-user-service)
+      - [Servicio: product-service](#servicio-product-service)
+    - [Pruebas de Integración](#pruebas-de-integración)
+      - [Servicio: user-service](#servicio-user-service-1)
+      - [Servicio: product-service](#servicio-product-service-1)
+    - [Pruebas End2End](#pruebas-end2end)
+    - [Pruebas de estrés](#pruebas-de-estrés)
+  - [Punto 4: Pipeline de stage](#punto-4-pipeline-de-stage)
+  - [Punto 5: Pipeline de master](#punto-5-pipeline-de-master)
+- [Notas: Proyecto final](#notas-proyecto-final)
+  - [Punto 1: Metodología Ágil y Estrategia de Branching](#punto-1-metodología-ágil-y-estrategia-de-branching)
+    - [Metodología y sistema de gestión](#metodología-y-sistema-de-gestión)
+    - [Estrategia de branching](#estrategia-de-branching)
+  - [Punto 2: Infraestructura como Código con Terraform](#punto-2-infraestructura-como-código-con-terraform)
+    - [Infraestructura implementada](#infraestructura-implementada)
+    - [Costos de la infraestructura](#costos-de-la-infraestructura)
+  - [Punto 3: Patrones de Diseño](#punto-3-patrones-de-diseño)
+    - [Patrones de diseño usados en la arquitectura existente](#patrones-de-diseño-usados-en-la-arquitectura-existente)
+      - [API Gateway](#api-gateway)
+      - [Externalized Configuration](#externalized-configuration)
+      - [Circuit Breaker](#circuit-breaker)
+      - [Centralized Logging/Tracing](#centralized-loggingtracing)
+      - [Profiles / Environment Separation](#profiles--environment-separation)
+      - [Service Discovery](#service-discovery)
+      - [Health Check](#health-check)
+  - [Punto 4: CI/CD Avanzado](#punto-4-cicd-avanzado)
+  - [Punto 5: Pruebas Completas](#punto-5-pruebas-completas)
+    - [Pruebas de seguridad](#pruebas-de-seguridad)
+    - [Informes de cobertura y calidad de pruebas](#informes-de-cobertura-y-calidad-de-pruebas)
+    - [Ejecución automatizada en pipelines](#ejecución-automatizada-en-pipelines)
+  - [Punto 6: Change Management y Release Notes](#punto-6-change-management-y-release-notes)
+  - [Punto 7: Observabilidad y Monitoreo](#punto-7-observabilidad-y-monitoreo)
+  - [Punto 8: Seguridad](#punto-8-seguridad)
+  - [Punto 9: Documentación y Presentación](#punto-9-documentación-y-presentación)
+
 ## Microservicios
 
 Hay que escoger, al menos, 6 microservicios **(que se comuniquen entre ellos)** para el desarrollo del taller.
@@ -17,7 +68,9 @@ El [proyecto](https://github.com/yuluka/ecommerce-microservice-backend-app) cont
 9. shipping-service
 10. user-service
 
-Para nuestra solución, **voy a escoger los siguientes**:
+  
+
+Para nuestra solución, **vamos a escoger los siguientes**:
 
 1. api-gateway
 2. cloud-config
@@ -30,9 +83,11 @@ Para nuestra solución, **voy a escoger los siguientes**:
 9. shipping-service
 10. user-service
 
+  
+
 Así es. Decidimos hacer el trabajo con todos los microservivios porque somos unos capos.
 
----
+  
 
 ## Punto 1: Configuración
 
@@ -42,16 +97,21 @@ En vista de esta situación, decidimos hacer la solución en Azure.
 
 La idea del taller es hacer que le proyecto es definir un conjunto de pruebas que se ejecuten antes de hacer el despliegue.
 
+  
 
 ### Jenkins
 
 Jenkins es la herramienta que usaremos para la ejecución de los pipelines. En lugar de definirlos en Actions de GitHub, pues irán acá.
+
+  
 
 Para la utilización de Jenkins, lo montaremos sobre un contenedor de Docker en local. El **comando** para esto es:
 
 ```bash
 docker run -d --name jenkins -p 8080:8080 -p 50000:50000 -v jenkins_data:/var/jenkins_home jenkins/jenkins:lts
 ```
+
+  
 
 En este comando:
 
@@ -63,6 +123,8 @@ En este comando:
 *   `-v jenkins_data:/var/jenkins_home` es para crear un volumen donde se guardan los datos importantes de Jenkins (así no inicia desde 0 cuando se para el contenedor). `jenkins_data` es el nombre del volumen, y `/var/jenkins_home` es el directorio interno en el contenedor.
 *   `jenkins/jenkins:lts` es la imagen oficial de Jenkins desde Docker Hub. `jenkins/jenkins` es el nombre del repositorio. `lts` (Long Term Support) es la versión.
 
+  
+
 Los **resultados del comando** fueron los siguientes:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/de9075ac-c692-4456-a310-8dc56af9c849/image.png)
@@ -73,6 +135,7 @@ Los **resultados del comando** fueron los siguientes:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/db21c4f2-3e61-4159-a52c-986c92dca18a/image.png)
 
+  
 
 Ahora es necesario hacer la configuración del usuario inicial para poder ingresar al panel de administración de Jenkins.
 
@@ -80,7 +143,9 @@ Primero, hay que poner la contraseña que generó:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/3054615b-7ce1-4b1f-bd75-dfebf1523704/image.png)
 
-Eso deja entrar. Ahora le puse "Instalar los plugins sugeridos":
+  
+
+Eso me deja entrar. Ahora le puse "Instalar los plugins sugeridos":
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/1ea6291d-5ae6-4a8d-b561-6d7e0e838397/image.png)
 
@@ -94,29 +159,41 @@ Eso deja entrar. Ahora le puse "Instalar los plugins sugeridos":
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/45d2a811-f13c-4395-872f-1fc63a3e58ba/image.png)
 
+  
+
 Además de esto, los pipeliines que usaremos para el despliegue dentro de los ambientes que tenemos necesitan de alunas cosas para poder ejectuarse:
 
-- Kubectl
-- az CLI
-- docker.io
+*   Kubectl
+*   Maven
+*   az CLI
+
+  
 
 Para evitar tener que hacer configuraciones muy extensas, optamos por instalar estas herramientas dentro de nuestro contenedor de Jenkins. Para esto, entramos al contendor:
 
-```bash
+```plain
 docker exec -u 0 -it 472838481c5c bash                                                                      
 ```
 
+  
+
 Ya estando dentro del contenedor, procedimos a hacer la instalación.
 
+  
+
 **Ya quedó listo el Jenkins para poder usarlo**.
+
+  
 
 ### Docker
 
 Docker ya está instalado. Algunas cosas que sí que valdría la pena mencionar es que, en caso de querer hacer la solución en local, es necesario hacer un aprovisionamiento de recursos a Docker, de forma que cuente con los suficientes para no quedarse colgado con la carga de tener tantas cosas montadas dentro del clúster en su interior.
 
+  
+
 Para esto, creamos un archivo en `C:\Users\User` llamado `.wslconfig`:
 
-```yaml
+```plain
 [wsl2]
 memory=12GB
 processors=4
@@ -124,48 +201,59 @@ swap=4GB
 localhostForwarding=true
 ```
 
+  
+
 Esto nos da la posibilidad de contar con más recursos.
 
+  
 
 ### Kubernetes
 
 Para poder hacer la orquestación de los kubernetes de forma local usaríamos **_Minikube_**. Esta es una herramienta que permite hacer el manejo de los clúster y sus nodos, donde nuestro PC es el clúster.
 
 Para poder hacer el manejo de esto, hay que usar `kubectl` que es la **herramienta de CLI oficial** para la interacción con Kubernetes. **Sirve para conectarse al cluster tanto local** (con Minikube) **como remoto** (en la nube).
+
   
 
 #### Minikube
 
-Para instalar Minikube, fuimos a la [sección de Inicio de su documentación](https://minikube.sigs.k8s.io/docs/start/?arch=%2Fwindows%2Fx86-64%2Fstable%2F.exe+download), e hice la instalación para Windows:
+Para instalar Minikube, fui a la [sección de Inicio de su documentación](https://minikube.sigs.k8s.io/docs/start/?arch=%2Fwindows%2Fx86-64%2Fstable%2F.exe+download), e hice la instalación para Windows:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/c8dcf315-bcae-4834-ba7d-10f2c4e196e6/image.png)
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/78bd9568-a9bb-4884-8fbb-0d8fac76b32b/image.png)
 
-Para instalar `kubectl`, fuimos a la [sección de Binarios de la documentación de Kubernetes](https://kubernetes.io/releases/download/#binaries), e hice la instalación para Windows:
+  
+
+Para instalar `kubectl`, fui a la [sección de Binarios de la documentación de Kubernetes](https://kubernetes.io/releases/download/#binaries), e hice la instalación para Windows:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/1b144685-7a3f-461e-a2f5-25b33233cf29/image.png)
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/08196344-3c07-4830-9417-3ee814f8eac6/image.png)
 
+  
+
 Ahora sí es momento de iniciar:
 
-```bash
+```plain
 minikube start
 ```
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/a94b3260-b8aa-4c20-b75a-9220318def9f/image.png)
 
+  
+
 Esto crea un contenedor de Docker:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/6477a5f5-e449-4feb-ac8f-c1e62d14073a/image.png)
 
+  
 
 #### AKS
 
 A pesar de que mostramos cómo configuramos Minikube para trabajar con un clúster local, ya mencionamos que terminamos por hacer el taller usando Azure. Por tanto, optamos por crear una infraestructura que levantara un Azure Kubernetes Service (AKS), de forma que nos permitiera tener el clúster allí, y hacer el manejo de todo desde allí:
 
-```yaml
+```plain
 resource "azurerm_kubernetes_cluster" "this" {
   name                = var.aks_name
   location            = var.location
@@ -200,19 +288,27 @@ resource "azurerm_kubernetes_cluster" "this" {
 }
 ```
 
+  
+
 Para el manejo de este clúster seguiremos usando `kubectl`.
+
+  
 
 ### Helm
 
 Para facilitar la gestión que haremos del clúster, vamos a instalar Helm.
 
+  
+
 **Helm** es un **gestor de paquetes para Kubernetes** que facilita la **implementación, configuración y gestión de aplicaciones** en clústeres de Kubernetes. Funciona de forma similar a un gestor de paquetes como `apt` en Ubuntu o `yum` en CentOS, pero específicamente para Kubernetes.
 
-Para instalarlo solo fuimos a su [página](https://helm.sh/docs/intro/install/) y descargué la versión de Windows. Luego solo agregué la ubicación del `.exe` a las variables de entorno.
+  
+
+Para instalarlo solo fui a su [página](https://helm.sh/docs/intro/install/) y descargué la versión de Windows. Luego solo agregué la ubicación del `.exe` a las variables de entorno.
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/7061eb25-991f-4ff4-857c-33163c09c0d5/image.png)
 
----
+  
 
 ## Punto 2: Pipeline para `dev`
 
@@ -228,11 +324,15 @@ En este punto se definirán los pipelines de construcción de los microservicios
 
 > Como estamos en el entorno **dev**, en este punto **no se hace aún el despliegue en Kubernetes** ni se ejecutan pruebas. Solo hay que asegurar que el código compila, construye y genera una imagen Docker correctamente.
 
+  
+
 Sin embargo, creemos que es pertinente tener los microservicios desplegados desde ya en el entorno de desarrollo, pues me permitirá ver si todo va bien, además de que me servirá para los siguientes puntos del taller.
+
+  
 
 Para la realización de este punto partimos de un script de bash que estábamos usando para el despliegue de todos los microservicios de una vez. Este lo creamos pensando en facilitarnos el trabajo, y terminamos por darnos cuenta de que es nuestros pipeline de despliegue en dev, solo que fuera de Jenkins:
 
-```yaml
+```plain
 #!/bin/bash
 
 # Exit immediately if a command exits with a non-zero status.
@@ -320,6 +420,8 @@ kubectl delete job newman-integration-tests -n "$K8S_NAMESPACE"
 
 echo "Deployment and Integration Tests complete."
 ```
+
+  
 
 Con esto, creamos un pipeline de Jenkins que usamos para el mismo propósito. La razón de tenerlo en Jenkins es que esta más alineado con lo que pide el taller:
 
@@ -477,21 +579,30 @@ pipeline {
         }
     }
 }
+
+
 ```
+
+  
 
 En Jenkins, creamos el pipeline así:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/2dc4577a-1532-4dca-899a-2231931411c8/image.png)![](https://t9013833367.p.clickup-attachments.com/t9013833367/335f0662-2507-480c-9b25-7acb5cfca7f6/image.png)![](https://t9013833367.p.clickup-attachments.com/t9013833367/abc971ae-4c7f-465d-98fa-4bcb77a56562/image.png)
 
+  
+  
 
 Con esto, quedó perfecto:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/44649b8b-ac0f-4a07-bb2e-696b2f95e75a/image.png)
 
+  
 
 ### Eureka
 
 Todo el sistema usa eureka para poder comunicarse entre sí. Por ende, es necesario hacer el despliegue del servicio, para que cada uno se pueda registrar acá.
+
+  
 
 Para eso, usamos esta configuración en `service-discovery-deployment.yml` :
 
@@ -542,11 +653,15 @@ spec:
   type: LoadBalancer
 ```
 
+  
+
 Este es uno de los microservicios que se desplegaron con el script de shell, por lo que no es necesario hacer nada más.
 
 Todos los servicios se conectaron al Eureka de forma satisfactoria:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/dbf3f51f-607e-443c-bdbd-e74f03ca5160/image.png)
+
+  
 
 Teniendo esto, no está de más ver que sí esté bien desplegado:
 
@@ -556,27 +671,35 @@ Teniendo esto, no está de más ver que sí esté bien desplegado:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/acbfef5b-1159-464d-ad07-55337aa66b33/image.png)
 
----
   
+
 ## Punto 3: Pruebas
 
 En este punto hay que implementar las pruebas del código para validar que todo vaya bien.
 
   
+
 ### Pruebas Unitarias
 
 Inicialmente, realizaremos las pruebas unitarias para dos de los microservicios que desplegamos dentro del entorno de dev.
 
+  
 
 #### Servicio: user-service
 
 Hay que decir, inicialmente, que cada microservicio tiene varios endpoints de CRUD para distintas cosas. Como debemos hacer 5 de cada tipo de prueba, entonces optamos por probar las servicios principales (al menos con las unitarias).
 
+  
+
 Para este microservicio haremos las pruebas unitarias que validen el buen funcionamiento de `UserServiceImpl`, que contiene el CRUD para los usuarios del sistema. Por ejemplo:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/607dff46-c919-4e84-87e3-ee7d0378fbca/image.png)
 
+  
+
 Para esto, creamos `UserServiceImplTests` dentro de la carpeta `test\app\com\selimhorri\service\impl\`.
+
+  
 
 Test1:
 
@@ -603,6 +726,8 @@ Test1:
         verify(userRepository, times(1)).findAll();
     }
 ```
+
+  
 
 Test2:
 
@@ -697,6 +822,8 @@ Test5:
     }
 ```
 
+  
+
 Test6:
 
 ```java
@@ -714,22 +841,29 @@ Test6:
     }
 ```
 
+  
+
 Haciendo las pruebas, notamos que el update de user-service estaba incorrecto, pues no estaba actualizando nada. Entonces lo corregí. Después, todo funcionó bien:
 
-```bash
+```plain
 .\mvnw -Dtest=UserServiceImplTests test
 ```
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/25ff093b-f32f-4d90-b5b4-68838072f065/image.png)
 
+  
 
 #### Servicio: product-service
 
-Para este microservicio voy a haremos pruebas unitarias que validen el buen funcionamiento de `ProductServiceImpl`, que contiene el CRUD para los productos del sistema. Por ejemplo:
+Para este microservicio vamos a haremos pruebas unitarias que validen el buen funcionamiento de `ProductServiceImpl`, que contiene el CRUD para los productos del sistema. Por ejemplo:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/0536ae94-4942-4c5b-ae07-e2f182680763/image.png)
 
+  
+
 Para esto, creamos `ProductServiceImplTest` dentro de la carpeta `test\app\com\selimhorri\service\impl`.
+
+  
 
 Test1:
 
@@ -757,6 +891,8 @@ Test1:
     }
 ```
 
+  
+
 Test2:
 
 ```java
@@ -783,6 +919,8 @@ Test2:
     }
 ```
 
+  
+
 Test3:
 
 ```java
@@ -798,6 +936,8 @@ Test3:
         verify(productRepository, times(1)).findById(999);
     }
 ```
+
+  
 
 Test4:
 
@@ -824,6 +964,8 @@ Test4:
         verify(productRepository, times(1)).save(any(Product.class));
     }
 ```
+
+  
 
 Test5:
 
@@ -876,27 +1018,37 @@ Test5:
     }
 ```
 
+  
+
 Los resultados de las pruebas fueron:
 
-```bash
+```plain
 .\mvnw -Dtest=ProductServiceImplTests test
 ```
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/4402f557-0c8d-487e-af20-94b14a52e426/image.png)
 
+  
 
 ### Pruebas de Integración
 
 Las pruebas de integración las realizamos para los mismos dos microservicios para los que hicimos unitarias: `user-service` y `produt-service`.
 
+  
+
 En estas pruebas de integración, nos aseguramos de que los controladores de estos dos servicios estén funcionando bien.
 
+  
 
 #### Servicio: user-service
 
 Las pruebas que implementamos validan el comportamiento del **servicio** **`UserService`** con acceso real a la base de datos en un entorno de Spring Boot cargado con perfil `test`, utilizando un repositorio real (no mockeado).
 
+  
+
 Estas pruebas quedaron en `test\java\com\selimhorri\app\service\UserServiceIntegrationTests.java`.
+
+  
 
 Test1:
 
@@ -951,11 +1103,13 @@ Test2:
         assertThat(updatedDto.getLastName()).isEqualTo(UPDATED_LAST_NAME);
         assertThat(updatedDto.getEmail()).isEqualTo(UPDATED_EMAIL);
     }
+
+
 ```
 
 Test3:
 
-```java
+```plain
     @Test
     void deleteUserById_shouldRemoveUserFromDatabase() {
         User savedEntity = userRepository.saveAndFlush(user);
@@ -971,7 +1125,7 @@ Test3:
 
 Test4:
 
-```java
+```plain
     @Test
     void findUserById_whenExists_shouldReturnUser() {
         User savedEntity = userRepository.saveAndFlush(user);
@@ -987,7 +1141,7 @@ Test4:
 
 Test5:
 
-```java
+```plain
     @Test
     void findUserById_whenNotExists_shouldThrowUserObjectNotFoundException() {
         Integer nonExistentId = -999;
@@ -1019,9 +1173,11 @@ Test5:
     }
 ```
 
+  
+
 Test6:
 
-```java
+```plain
     @Test
     void findAll_shouldReturnAllUsers() {
         userRepository.saveAndFlush(user); // User 1
@@ -1056,14 +1212,17 @@ Test6:
     }
 ```
 
+  
+
 El resultado de las pruebas fue:
 
-```bash
+```plain
 .\mvnw -Dtest=UserServiceIntegrationTests test
 ```
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/4b3f7896-2b1f-4faa-8c43-deff43205ae9/image.png)
 
+  
 
 #### Servicio: product-service
 
@@ -1071,9 +1230,11 @@ Las pruebas que implementamos validan el comportamiento del **servicio** **`Prod
 
 Estas pruebas quedaron en `test\java\com\selimhorri\app\service\`[`ProductServiceIntegrationTests.java`](http://ProductServiceIntegrationTests.java).
 
+  
+
 Test1:
 
-```java
+```plain
      @Test
     void saveProduct_shouldPersistProduct() {
         ProductDto savedProductDto = productService.save(productDto);
@@ -1094,7 +1255,7 @@ Test1:
 
 Test2:
 
-```java
+```plain
     @Test
     void updateProduct_shouldModifyExistingProduct() {
         Product savedEntity = productRepository.saveAndFlush(product);
@@ -1123,7 +1284,7 @@ Test2:
 
 Test3:
 
-```java
+```plain
     @Test
     void deleteProductById_shouldRemoveProductFromDatabase() {
         Product savedEntity = productRepository.saveAndFlush(product);
@@ -1139,7 +1300,7 @@ Test3:
 
 Test4:
 
-```java
+```plain
     @Test
     void findProductById_whenExists_shouldReturnProduct() {
         Product savedEntity = productRepository.saveAndFlush(product);
@@ -1156,7 +1317,7 @@ Test4:
 
 Test5:
 
-```java
+```plain
     @Test
     void findAll_shouldReturnAllProducts() {
         productRepository.saveAndFlush(product); // Product 1        
@@ -1190,7 +1351,7 @@ Test5:
 
 Los resultados fueron:
 
-```bash
+```plain
 .\mvnw -Dtest=ProductServiceIntegrationTests test
 ```
 
@@ -1232,11 +1393,11 @@ Los charts nos indican el desempeño de la aplicación:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/a1724272-3fe3-4b32-aa92-2fb420cd23d1/image.png)![](https://t9013833367.p.clickup-attachments.com/t9013833367/edb1e91e-9efe-404d-92cb-a568bd73cbaa/image.png)
 
----
+  
 
 ## Punto 4: Pipeline de stage
 
-En este punto, esencialmente, debemos repetir lo que hicimos con el pipeline de `dev`, pues ese ya estaba haciendo el despliegue en un ambiente. 
+En este punto, esencialmente, debemos repetir lo que hicimos con el pipeline de `dev`, pues ese ya estaba haciendo el despliegue en un ambiente.
 
 Para esto, reusamos la lógica del pipeline mencionado, y lo modificamos un poco:
 
@@ -1353,8 +1514,8 @@ pipeline {
         stage('Run Newman Integration Tests') {
             steps {
                 sh '''
-                    echo "Waiting for 5 minutes before starting Newman integration tests..."
-                    sleep 300
+                    echo "Waiting for 2 minutes before starting Newman integration tests..."
+                    sleep 120
                     kubectl apply -f k8s/newman/newman-job.yml -n "$K8S_NAMESPACE"
                     kubectl wait --for=condition=complete job/newman-integration-tests --timeout=300s -n "$K8S_NAMESPACE" || {
                         echo "Newman tests failed or timed out."
@@ -1394,9 +1555,11 @@ pipeline {
         }
     }
 }
+
+
 ```
 
---- 
+  
 
 ## Punto 5: Pipeline de master
 
@@ -1569,3 +1732,334 @@ pipeline {
     }
 }
 ```
+
+  
+
+* * *
+
+# Notas: Proyecto final
+
+Esta sección incluye la documentación del proyecto final, y los puntos solicitados en el enunciado.
+
+  
+
+## Punto 1: Metodología Ágil y Estrategia de Branching
+
+### Metodología y sistema de gestión
+
+Para el desarrollo del proyecto, usaremos una metodología tipo **Kanban**, en donde nos serviremos del tablero clásico de esta metodología para organizar las tareas en las que nos encontramos trabajando.
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/9699afa8-ebfa-4ceb-94ce-afc07cb0ede1/image.png)
+
+  
+
+### Estrategia de branching
+
+Para la parte de desarrollo vamos a usar GitFlow. La razón de esto es que es una estrategia de branching bastante clara y estructurada, compatible y muy usada en enfoques ágiles.
+
+Por esto mismo, muchos desarrolladores ya la conocen y se sienten cómodos con ella. Esto sirve para saltarnos un posible paso de adecuación que puede ser muy engorroso.
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/7d719130-5232-4a40-90fc-fa75382688bc/image.png)
+
+**Main:** la rama de producción.
+
+**Develop:** la rama de integración.
+
+**Feature:** ramas de desarrollo de nuevas funcionalidades.
+
+El flujo básico consiste en:
+
+*   Crear rama desde `develop`: `git checkout -b feature/login`.
+*   Desarrollar la funcionalidad.
+*   Hacer PR hacia `develop`.
+*   Una vez aprobado y probado, `develop` se puede fusionar en `main` para despliegue.
+
+  
+  
+  
+
+Para esta parte vamos a usar una estrategia similar a Gitflow pero que se llama **Trunk-Based Development**. Acá se puede encontrar un [artículo](https://www.atlassian.com/continuous-delivery/continuous-integration/trunk-based-development) con más info.
+
+Este branching es re básico. Consiste en hacer cambios continuos a una rama "trunk" desde ramas de vida corta de feat:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/0109c442-9a7b-4722-82f1-fde8fa90ccf2/image.png)
+
+Las ramas van a tener el prefijo de `infra/*` .
+
+Para esto, además, hay que tener varios entornos, de forma que se puedan hacer las pruebas:
+
+```plain
+/infra
+├── main.tf
+├── variables.tf
+├── outputs.tf
+├── environments/
+│   ├── test/
+│   │   └── terraform.tfvars
+│   └── prod/
+│       └── terraform.tfvars
+```
+
+> Cada entorno usa las mismas configuraciones base, pero distintos valores (número de nodos, nombres, SKU de Redis, etc.).
+
+El flujo básico consiste en:
+
+*   Operaciones crea una nueva rama: `infra/feat-upgrade-acr` desde `infra/dev`.
+*   Cambia un recurso (por ejemplo, cambia el SKU de ACR o agrega un NSG).
+*   Ejecuta Terraform en el entorno de `test`:
+
+```plain
+terraform plan -var-file=environments/dev/terraform.tfvars
+terraform apply -var-file=environments/dev/terraform.tfvars
+```
+
+*   Verifica que todo funcione.
+*   Si todo es correcto, hace PR a `infra/main`.
+*   Ejecuta `terraform apply` con el archivo de producción:
+
+```plain
+terraform apply -var-file=environments/prod/terraform.tfvars
+```
+
+Hay que aclarar que lo mejor sería tener repos separados: uno para el código y el otro para la infra. Como no se puede en este taller, entonces se va a usar la misma main para infra y para desarrollo.
+
+  
+
+## Punto 2: Infraestructura como Código con Terraform
+
+### Infraestructura implementada
+
+Para el desarrollo del proyecto, se ha implementado toda la infraestructura en Terraform, para hacer un despliegue usando Azure. En esta, se han configurado 3 ambientes: `dev`, `stage` y `prod`.
+
+  
+
+La infraestructura implementada está compuesta por:
+
+*   Un Resource Group.
+*   Una Virtual Network.
+*   Una Subnet.
+*   Un Azure Kubernetes Service (AKS) que es el clúster que contiene todos los microservicios desplegados.
+
+La siguiente imagen es una representación visual de la infraestructura mencionada. Para cada ambiente es, esencialmente, la misma:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/88591204-473d-4661-9f6a-80ba3776616b/image.png)
+
+  
+
+Además de esto, se ha realizado la configuración para el **backend remoto** en **Azure Storage,** de la siguiente manera:
+
+```yaml
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "rg-terraform-state"
+    storage_account_name = "ecommerceinfrastrgaccyul"
+    container_name       = "tfstate"
+    key                  = "dev.terraform.tfstate"
+  }
+}
+```
+
+  
+
+### Costos de la infraestructura
+
+Para realizar el cálculo de los costos de nuestra infra, usaremos la [calculadora de costos de Azure](https://azure.microsoft.com/en-us/pricing/calculator/?cdn=disable). Para cada recurso, asumimos el mínimo de tráfico y consumo dado el alcance del proyecto.
+
+  
+
+Para el AKS obtuvimos:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/8a1ee8a0-8a47-4a36-a2aa-e66f75c321f1/image.png)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/ccf79337-ec19-4493-9847-e23aba1f03c5/image.png)
+
+Obtuvimos un costo estimado de ~133 USD mensuales por el clúster.
+
+  
+
+Para la Storage Account (el backend remoto), obtuvimos que:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/34ad95c5-9c3f-4a8a-b18d-1dc0c9ebdc9b/image.png)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/e5f5c615-fe01-4929-b946-f1fe20b8b8d3/image.png)
+
+Obtuvimos un costo estimado de ~21 USD mensuales por la Storage Account.
+
+  
+
+La VNet se cobra por la cantidad de uso, por lo que supusimos el uso mínimo y obtuvimos esto:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/c7ced4ab-dd44-42fa-b8f5-ebe3a3db2cf3/image.png)
+
+  
+
+Con esto, llegamos a un costo total estimado de **154.68 USD mensuales** por tener la infraestructura (de uno de nuestros entornos) en funcionamiento durante todos los días del mes.
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/caafe22a-c946-462a-951c-b541fe9edffa/image.png)
+
+  
+
+Teniendo en cuenta que estamos manejando 3 entornos con las mismas especificaciones, tendríamos que triplicar ese resultado, obteniendo un **costo total de 464.04 USD mensuales**.
+
+  
+
+## Punto 3: Patrones de Diseño
+
+### Patrones de diseño usados en la arquitectura existente
+
+Para la identificación de los patrones de diseño presentes en la arquitectura que nos fue entregada en un inicio, decidimos explorar a fondo el repositorio y cada uno de sus microservicios.
+
+  
+
+#### API Gateway
+
+Con un primer vistazo, pudimos determinar que se está usando el patrón **API Gateway** que actúa como **único punto de entrada** para todos los otros microservicios. Esto, dada la presencia del servicio `api-gateway`.
+
+  
+
+#### Externalized Configuration
+
+Viendo los archivos de configuración como `application.yml` y `application-dev.yml` de servicios básicos como `user-service`, pudimos identificar el uso de varios patrones.
+
+  
+
+El patrón **Externalized Configuration**, que se puede identificar en este fragmento del `application.yml`:
+
+```yaml
+ spring:
+  config:
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://cloud-config:9296}
+```
+
+  
+
+Esto implica que la aplicación puede importar configuración desde un **servidor externo (Spring Cloud Config Server)**. Esto desacopla la configuración del código, permitiendo cambios sin redeploy.
+
+  
+
+#### Circuit Breaker
+
+También gracias al `application.yml` de los microservicios, identificamos el uso del patrón **Circuit Breaker**:
+
+```yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      userService:
+        register-health-indicator: true
+        event-consumer-buffer-size: 10
+        automatic-transition-from-open-to-half-open-enabled: true
+        failure-rate-threshold: 50
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        sliding-window-size: 10
+        wait-duration-in-open-state: 5s
+        sliding-window-type: COUNT_BASED
+```
+
+  
+
+Además de:
+
+```yaml
+management:
+  health:
+    circuitbreakers:
+      enabled: true
+```
+
+  
+
+Se está usando **Resilience4j** para evitar que llamadas fallidas repetidas colapsen el sistema. Si una llamada falla muchas veces, se "abre el circuito" y evita nuevas llamadas por un tiempo.
+
+  
+
+#### Centralized Logging/Tracing
+
+Gracias al uso de Zipkin, identificamos el uso del patrón **Centralized Logging/Tracing**:
+
+```yaml
+spring:
+  zipkin:
+    base-url: ${SPRING_ZIPKIN_BASE_URL:http://zipkin:9411/}
+```
+
+  
+
+Este patrón implica que cada microservicio esté preparado para enviar sus logs a **Zipkin**, lo que los centraliza, y facilita la observabilidad de las solicitudes entre microservicios.
+
+  
+
+#### Profiles / Environment Separation
+
+Debido a cómo estamos manejando el proyecto, y la existencia de archivos de configuración para cada entorno, identificamos el uso del patrón **Profiles / Environment Separation**, que permite separar la configuración según ambientes (desarrollo, producción, test, etc.), y lograr que el sistema se comporte de forma distinta en función del entorno en el que se encuentre.
+
+  
+
+#### Service Discovery
+
+Sabemos que el proyecto usa Eureka, porque lo hemos estado trabajando por las últimas hermosas y para nada exasperantes semanas, pero también por la forma en que está configurado el `api-gateway`. Esto implica que el proyecto está implementando el patrón **Service Discovery**.
+
+  
+
+Este patrón permite que los microservicios **se registren automáticamente** en un servidor central (Eureka), y pueden **descubrir las direcciones de otros servicios** sin tenerlas hardcodeadas.
+
+  
+
+#### Health Check
+
+Aunque en el momento de entrega del código no hay archivos de deployment, algunos de los microservicios, como `order-service` o `shipping-service`, cuentan con endpoints que **pueden actuar como pruebas de vida (liveness probe),** como:
+
+```java
+@RestController
+class OrderController {
+	
+	@GetMapping
+	public String msg() {
+		return "Order controller responding!!";
+	}
+	
+}
+```
+
+  
+
+Esto nos indica que el proyecto está preparado para la implementación del patrón **Health Check**. Este patrón permite que kubernetes conozca el estado de estos servicios, y tome las acciones pertinentes.
+
+  
+
+## Punto 4: CI/CD Avanzado
+
+  
+
+## Punto 5: Pruebas Completas
+
+La implementación que realizamos de la pruebas unitarias, de integración, E2E, y de rendimiento se encuentran en la sección Punto 3: Pruebas de las notas del taller 2.
+
+  
+
+### Pruebas de seguridad
+
+  
+
+### Informes de cobertura y calidad de pruebas
+
+  
+
+### Ejecución automatizada en pipelines
+
+  
+
+## Punto 6: Change Management y Release Notes
+
+  
+
+## Punto 7: Observabilidad y Monitoreo
+
+  
+
+## Punto 8: Seguridad
+
+  
+
+## Punto 9: Documentación y Presentación
