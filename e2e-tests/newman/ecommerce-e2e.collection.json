@@ -1235,61 +1235,7 @@
 					},
 					"response": []
 				},
-				{
-					"name": "Check Size",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									""
-								],
-								"type": "text/javascript",
-								"packages": {}
-							}
-						},
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test(\"Status code is 200 (OK)\", function () {\r",
-									"    pm.expect(pm.response.code).equals(200);\r",
-									"});\r",
-									"\r",
-									"pm.test(\"User has 3 favs\", function () {\r",
-									"    const jsonResponse = pm.response.json();\r",
-									"    const collection = jsonResponse.collection || [];\r",
-									"\r",
-									"    // Filtra por userId === 5\r",
-									"    const favoritosUsuario = collection.filter(item => item.userId === 5);\r",
-									"\r",
-									"    // Verifica que la longitud sea exactamente 3\r",
-									"    pm.expect(favoritosUsuario.length).to.eql(3);\r",
-									"});\r",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {}
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "http://{{prefix}}favourite-service/api/favourites",
-							"protocol": "http",
-							"host": [
-								"{{prefix}}favourite-service"
-							],
-							"path": [
-								"api",
-								"favourites"
-							]
-						}
-					},
-					"response": []
-				},
+				
 				{
 					"name": "Remove Fav 2",
 					"event": [
@@ -1337,61 +1283,6 @@
 								"{{userId}}",
 								"{{productId}}",
 								"{{likeDate}}"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Check Size 2",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									""
-								],
-								"type": "text/javascript",
-								"packages": {}
-							}
-						},
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test(\"Status code is 200 (OK)\", function () {\r",
-									"    pm.expect(pm.response.code).equals(200);\r",
-									"});\r",
-									"\r",
-									"pm.test(\"User has 3 favs\", function () {\r",
-									"    const jsonResponse = pm.response.json();\r",
-									"    const collection = jsonResponse.collection || [];\r",
-									"\r",
-									"    // Filtra por userId === 5\r",
-									"    const favoritosUsuario = collection.filter(item => item.userId === 5);\r",
-									"\r",
-									"    // Verifica que la longitud sea exactamente 3\r",
-									"    pm.expect(favoritosUsuario.length).to.eql(2);\r",
-									"});\r",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {}
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "http://{{prefix}}favourite-service/api/favourites",
-							"protocol": "http",
-							"host": [
-								"{{prefix}}favourite-service"
-							],
-							"path": [
-								"api",
-								"favourites"
 							]
 						}
 					},
