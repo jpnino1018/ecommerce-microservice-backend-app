@@ -30,6 +30,9 @@ spring:
   #  baseline-on-migrate: true
   #  enabled: true
 
+feature:
+  new-favourites: true
+
 logging:
   level:
     org:
