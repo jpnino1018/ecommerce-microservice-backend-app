@@ -1,3 +1,10 @@
+# [1.0.0-dev.3](https://github.com/jpnino1018/ecommerce-microservice-backend-app/compare/v1.0.0-dev.2...v1.0.0-dev.3) (2025-06-13)
+
+
+### Features
+
+* add VERSION file ([4d92c05](https://github.com/jpnino1018/ecommerce-microservice-backend-app/commit/4d92c05fdb67f43a8a138f93dd6148b771a213b8))
+
 # [1.0.0-dev.2](https://github.com/jpnino1018/ecommerce-microservice-backend-app/compare/v1.0.0-dev.1...v1.0.0-dev.2) (2025-06-13)
 
 
