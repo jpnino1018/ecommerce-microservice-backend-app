@@ -41,12 +41,24 @@
       - [Profiles / Environment Separation](#profiles--environment-separation)
       - [Service Discovery](#service-discovery)
       - [Health Check](#health-check)
+    - [Patrones propios](#patrones-propios)
+      - [**Resiliencia: Retry**](#resiliencia-retry)
+      - [Configuración: Feature Toggle](#configuración-feature-toggle)
+      - [Resiliencia: Timeout](#resiliencia-timeout)
   - [Punto 4: CI/CD Avanzado](#punto-4-cicd-avanzado)
+    - [Pipelines](#pipelines)
+    - [Ambientes separados](#ambientes-separados)
+    - [SonarQube](#sonarqube)
+    - [Trivy](#trivy)
+    - [Versionado semántico automático](#versionado-semántico-automático)
+    - [Notificaciones de falles automáticas](#notificaciones-de-falles-automáticas)
+    - [Aprobaciones para despliegues a producción](#aprobaciones-para-despliegues-a-producción)
   - [Punto 5: Pruebas Completas](#punto-5-pruebas-completas)
     - [Pruebas de seguridad](#pruebas-de-seguridad)
     - [Informes de cobertura y calidad de pruebas](#informes-de-cobertura-y-calidad-de-pruebas)
     - [Ejecución automatizada en pipelines](#ejecución-automatizada-en-pipelines)
   - [Punto 6: Change Management y Release Notes](#punto-6-change-management-y-release-notes)
+    - [Generación automática de Release Notes](#generación-automática-de-release-notes)
   - [Punto 7: Observabilidad y Monitoreo](#punto-7-observabilidad-y-monitoreo)
   - [Punto 8: Seguridad](#punto-8-seguridad)
   - [Punto 9: Documentación y Presentación](#punto-9-documentación-y-presentación)
@@ -70,7 +82,7 @@ El [proyecto](https://github.com/yuluka/ecommerce-microservice-backend-app) cont
 
   
 
-Para nuestra solución, **vamos a escoger los siguientes**:
+Para nuestra solución, **voy a escoger los siguientes**:
 
 1. api-gateway
 2. cloud-config
@@ -855,7 +867,7 @@ Haciendo las pruebas, notamos que el update de user-service estaba incorrecto, p
 
 #### Servicio: product-service
 
-Para este microservicio vamos a haremos pruebas unitarias que validen el buen funcionamiento de `ProductServiceImpl`, que contiene el CRUD para los productos del sistema. Por ejemplo:
+Para este microservicio voy a haremos pruebas unitarias que validen el buen funcionamiento de `ProductServiceImpl`, que contiene el CRUD para los productos del sistema. Por ejemplo:
 
 ![](https://t9013833367.p.clickup-attachments.com/t9013833367/0536ae94-4942-4c5b-ae07-e2f182680763/image.png)
 
@@ -2028,7 +2040,400 @@ Esto nos indica que el proyecto está preparado para la implementación del patr
 
   
 
+### Patrones propios
+
+Para los patrones extra que debemos implementar, escogimos dos de resiliencia y uno de configuración. Esto, dado que los dos de resiliencia son complementarios.
+
+  
+
+| **Categoría** | **Patrón** | **Implementación** |
+| ---| ---| --- |
+| Resiliencia | Retry | `@Retry` + `fallback` + YML |
+| Configuración | Feature Toggle | `@ConditionalOnProperty` |
+| Resiliencia | Timeout | `@TimeLimiter` + YML |
+
+  
+
+#### **Resiliencia: Retry**
+
+El patrón **Retry** permite que una operación que falla (por ejemplo, por un error de red o timeout temporal) se vuelva a intentar automáticamente antes de lanzar una excepción. Esto mejora la resiliencia del sistema ante fallos transitorios.
+
+  
+
+Su **propósito** es evitar fallas inmediatas ante problemas temporales de conectividad entre microservicios, permitiendo que la operación tenga más oportunidades de completarse correctamente.
+
+  
+
+**Beneficios:**
+
+*   Mejora la resiliencia ante fallos de red o indisponibilidad momentánea.
+*   Reduce errores visibles al usuario final.
+*   Disminuye la necesidad de implementar lógica de reintento manual.
+
+  
+
+Para su implementación elegimos el endpoint `findAll()` del servicio `favourite-service` , ya uqe hace llamados a los servicios `user-service` y `product-service`. El método original:
+
+```java
+@Override
+public List<FavouriteDto> findAll() {
+	log.info("*** FavouriteDto List, service; fetch all favourites *");
+	return this.favouriteRepository.findAll()
+			.stream()
+				.map(FavouriteMappingHelper::map)
+				.map(f -> {
+					f.setUserDto(this.restTemplate
+							.getForObject(AppConstant.DiscoveredDomainsApi
+									.USER_SERVICE_API_URL + "/" + f.getUserId(), UserDto.class));
+					f.setProductDto(this.restTemplate
+							.getForObject(AppConstant.DiscoveredDomainsApi
+									.PRODUCT_SERVICE_API_URL + "/" + f.getProductId(), ProductDto.class));
+					return f;
+				})
+				.distinct()
+				.collect(Collectors.toUnmodifiableList());
+}
+```
+
+  
+
+Lo que hicimos fue extraer las llamadas REST a métodos separados, y aplicar la anotación `@Retry` con `Resilience4j`. Cada uno tiene su propio _fallback_ para manejar errores de forma controlada:
+
+```java
+@Retry(name = "userService", fallbackMethod = "fallbackUser")
+public UserDto getUserById(int userId) {
+	return this.restTemplate.getForObject(
+		AppConstant.DiscoveredDomainsApi.USER_SERVICE_API_URL + "/" + userId,
+		UserDto.class);
+}
+
+@Retry(name = "productService", fallbackMethod = "fallbackProduct")
+public ProductDto getProductById(int productId) {
+	return this.restTemplate.getForObject(
+		AppConstant.DiscoveredDomainsApi.PRODUCT_SERVICE_API_URL + "/" + productId,
+		ProductDto.class);
+}
+
+public UserDto fallbackUser(int userId, Exception e) {
+	log.warn("Fallo al obtener user {}", userId);
+	return null;
+}
+
+public ProductDto fallbackProduct(int productId, Exception e) {
+	log.warn("Fallo al obtener product {}", productId);
+	return null;
+}
+```
+
+  
+
+Además de eso, se realizó la configuración pertinente en el `application.yml` de este servicio. Agregamos este bloque:
+
+```yaml
+  retry:
+    instances:
+      userService:
+        max-attempts: 3
+        wait-duration: 1s
+      productService:
+        max-attempts: 3
+        wait-duration: 1s
+```
+
+  
+
+#### Configuración: Feature Toggle
+
+El patrón **Feature Toggle** permite habilitar o deshabilitar funcionalidades de manera dinámica a través de la configuración, sin necesidad de modificar el código o reiniciar la aplicación. Su **propósito** es **activar o desactivar** una funcionalidad experimental sin afectar al resto del sistema.
+
+  
+
+**Beneficios:**
+
+*   Permite desplegar nuevas funciones de forma progresiva.
+*   Aumenta la seguridad al poder desactivar código en producción sin reiniciar.
+*   Favorece la experimentación controlada y pruebas A/B.
+
+  
+
+Para implementar este patrón crearemos un nuevo controlador dentro del servicio `favourite-service`, que tendrá una funcionalidad experimental que deseamos probar de manera controlada, y tener la capacidad de activarla o desactivarla en el momento que deseemos.
+
+  
+
+La funcionalidad experimental consiste en traer todos los favoritos de un usuario, pero con el cambio de que le agrega un adjetivo aleatorio al inicio de cada producto:
+
+```java
+@RestController
+@RequestMapping("/api/v2/favourites")
+@Slf4j
+@RequiredArgsConstructor
+@ConditionalOnProperty(name = "feature.new-favourites", havingValue = "true")
+public class FavouriteV2Controller {
+
+    @Autowired
+    private FavouriteService service;
+
+    @GetMapping
+    public List<FavouriteDto> findAll() {
+        log.info("*** FavouriteDto List, controller V2; fetch all favourites *");
+
+        List<String> randomAdjectives = List.of("Amazing", "Wonderful", "Fantastic", "Incredible", "Awesome", "Spectacular", "Magnificent", "Stunning", "Breathtaking", "Remarkable");
+        return this.service.findAll()
+                .stream()
+                .map(favourite -> {
+                    favourite.getProductDto()
+                            .setProductTitle(randomAdjectives.get((int) (Math.random() * randomAdjectives.size())) + " "
+                                    + favourite.getProductDto().getProductTitle());
+                    return favourite;
+                })
+                .collect(Collectors.toList());
+    }
+}
+```
+
+  
+
+El interruptor para activar o desactivar dicha funcionalidad se agregó dentro del `application-dev.yml` del servicio:
+
+```yaml
+feature:
+  new-favourites: true
+```
+
+  
+
+#### Resiliencia: Timeout
+
+El patrón T**imeout** establece un **tiempo máximo** de espera para que una operación se complete. Si ese tiempo se supera, se **interrumpe** y lanza una excepción controlada, evitando que el hilo quede bloqueado indefinidamente.
+
+  
+
+Cumple el **propósito** de prevenir que llamadas a otros microservicios, como `user-service`, bloqueen hilos del sistema por demoras excesivas.
+
+  
+
+**Beneficios:**
+
+*   Protege la aplicación de cuelgues causados por servicios lentos o no disponibles.
+*   Libera recursos rápidamente en escenarios de fallo.
+*   Mejora la estabilidad y control de tiempos de respuesta.
+
+  
+
+Este patrón sirve para complementar el patrón **Retry** que configuramos antes. Por ende, haremos las modificaciones sobre los mismos métodos que usamos para dicho patrón:
+
+```java
+@TimeLimiter(name = "userService")
+@Retry(name = "userService", fallbackMethod = "fallbackUser")
+public UserDto getUserById(int userId) {
+	return this.restTemplate.getForObject(
+		AppConstant.DiscoveredDomainsApi.USER_SERVICE_API_URL + "/" + userId,
+		UserDto.class);
+}
+
+@TimeLimiter(name = "productService")
+@Retry(name = "productService", fallbackMethod = "fallbackProduct")
+public ProductDto getProductById(int productId) {
+	return this.restTemplate.getForObject(
+		AppConstant.DiscoveredDomainsApi.PRODUCT_SERVICE_API_URL + "/" + productId,
+		ProductDto.class);
+}
+```
+
+  
+
+La configuración que agregamos al application.yml es:
+
+```yaml
+  timelimiter:
+    instances:
+      userService:
+        timeout-duration: 2s
+        cancel-running-future: true
+      productService:
+        timeout-duration: 2s
+        cancel-running-future: true
+```
+
+  
+
 ## Punto 4: CI/CD Avanzado
+
+Para el desarrollo del proyecto decidimos pasarnos a usar los pipelines de Azure Devops, ya que permiten una mayor facilidad de uso frente a Jenkins, que nos dio muchos problemas durante el desarrollo del Taller 2.
+
+  
+
+### Pipelines
+
+Se ha configurado un pipeline para el despliegue de la infraestructura:
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main  # Adjust as needed
+
+parameters:
+  - name: environment
+    displayName: Environment to deploy
+    type: string
+    default: dev
+    values:
+      - dev
+      - stage
+      - prod
+
+pool:
+  name: my-machine
+
+variables:
+  TF_IN_AUTOMATION: true
+
+stages:
+  - stage: Deploy
+    displayName: Deploy ${{ parameters.environment }} environment
+    jobs:
+      - job: Terraform_Deployment
+        displayName: Terraform Deployment
+        steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: 'azure-connection'
+              scriptType: 'ps'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                Write-Host "🔧 Initializing Terraform for ${{ parameters.environment }}..."
+                terraform init -backend-config="key=${{ parameters.environment }}.tfstate" .\envs\${{ parameters.environment }}
+
+                Write-Host "🔍 Validating Terraform for ${{ parameters.environment }}..."
+                terraform validate .\envs\${{ parameters.environment }}
+
+                Write-Host "🧠 Planning Terraform for ${{ parameters.environment }}..."
+                terraform plan -out=tfplan -input=false -var="env=${{ parameters.environment }}" .\envs\${{ parameters.environment }}
+
+                Write-Host "🚀 Applying Terraform plan for ${{ parameters.environment }}..."
+                terraform apply -input=false tfplan
+
+                Write-Host "✅ Deployment for ${{ parameters.environment }} completed!"
+            displayName: 'Run Terraform with PowerShell'
+```
+
+  
+
+### Ambientes separados
+
+Se han implementado ambientes `dev`, `stage` y `prod`. Esto se hizo mediante el código de terraform, en donde cada cada ambiente tiene sus propios recursos aislados de los demás.
+
+  
+
+### SonarQube
+
+  
+
+### Trivy
+
+### Versionado semántico automático
+
+Para el versionado semántico usamos la notación: `MAJOR.MINOR.PATCH`. Con esto en mente, configuramos el proyecto para que actualizar la versión automáticamente con base en los **commits:**
+
+*   `fix:` → incrementa `PATCH`
+*   `feat:` → incrementa `MINOR`
+*   `BREAKING CHANGE:` → incrementa `MAJOR`
+
+  
+
+Se configuró un pipeline automatizado en GitHub Actions para manejar el **versionado semántico** del proyecto de forma automática mediante la herramienta `semantic-release`. Este pipeline analiza los mensajes de commit y, si detecta cambios relevantes (según la convención [Conventional Commits](https://www.conventionalcommits.org)), genera automáticamente:
+
+*   Un nuevo número de versión (`major.minor.patch`)
+*   Un changelog actualizado ([`CHANGELOG.md`](http://CHANGELOG.md))
+*   Una publicación en la pestaña "Releases" de GitHub
+
+  
+
+Esto se ejecuta automáticamente al hacer push a las ramas `master` (releases estables) o `dev` (prereleases).
+
+  
+
+El pipeline es el siguiente:
+
+```yaml
+name: Semantic Release
+
+on:
+  push:
+    branches:
+      - master
+      - dev
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install semantic-release @semantic-release/changelog @semantic-release/git @semantic-release/github -D
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+
+```
+
+  
+
+Y la configuración `.releaserc` es:
+
+```json
+{
+  "branches": [
+    "master",
+    { "name": "dev", "prerelease": true }
+  ],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    "@semantic-release/github",
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["VERSION", "CHANGELOG.md"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ]
+  ]
+}
+
+
+```
+
+  
+
+Para que el pipeline pueda cumplir con su función, es muy importante seguir las reglas de Conventional Commits para que el análisis semántico funcione correctamente.
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/fc7a6b61-f1a5-4438-a2a9-8ff99eaec1e5/image.png)
+
+  
+
+### Notificaciones de falles automáticas
+
+El pipeline de despliegue de la infra se ha configurado para notificar su fallo por medio del correo:
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/36959b7c-fcc0-47bd-8718-c36b38e826d8/Imagen%20de%20WhatsApp%202025-06-13%20a%20las%2001.00.23_b647e474.jpg)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/5944f9fe-b2b8-4894-ad39-fef493f0c7f6/Imagen%20de%20WhatsApp%202025-06-13%20a%20las%2001.00.52_2eab242a.jpg)
+
+### Aprobaciones para despliegues a producción
 
   
 
@@ -2052,6 +2457,19 @@ La implementación que realizamos de la pruebas unitarias, de integración, E2E,
 
 ## Punto 6: Change Management y Release Notes
 
+### Generación automática de Release Notes
+
+Se configuró `semantic-release` para generar automáticamente un changelog estructurado (release notes) en cada versión publicada. Esto se logró gracias al plugin `@semantic-release/release-notes-generator`, que forma parte del flujo de plugins definidos en el archivo `.releaserc`.
+
+  
+
+Además, con `@semantic-release/git`, este changelog se **agrega automáticamente** al archivo [`CHANGELOG.md`](http://CHANGELOG.md) y se **comitea en el repositorio**.
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/7e98b0f3-015d-4430-8705-754ddfe25421/image.png)
+
+![](https://t9013833367.p.clickup-attachments.com/t9013833367/21501f04-99d1-4923-9945-bc634876f750/image.png)
+
+  
   
 
 ## Punto 7: Observabilidad y Monitoreo
