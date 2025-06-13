@@ -7,6 +7,11 @@ pipeline {
         K8S_NAMESPACE = 'dev'
     }
 
+    tools {
+        docker 'docker-tool'
+    }
+
+
     stages {
 
         stage('Login to Azure') {
