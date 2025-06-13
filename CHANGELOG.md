@@ -1,3 +1,12 @@
+# [1.0.0-dev.2](https://github.com/jpnino1018/ecommerce-microservice-backend-app/compare/v1.0.0-dev.1...v1.0.0-dev.2) (2025-06-13)
+
+
+### Features
+
+* change versioning pipeline ([01f5eee](https://github.com/jpnino1018/ecommerce-microservice-backend-app/commit/01f5eee492b826e02e9cc737bc888a86db65f74e))
+* change versioning pipeline ([c9226ea](https://github.com/jpnino1018/ecommerce-microservice-backend-app/commit/c9226eaac4dbb720aefb46e15a3a92b3317559cf))
+* change versioning pipeline ([0d75bd8](https://github.com/jpnino1018/ecommerce-microservice-backend-app/commit/0d75bd85c200a33ae1af3b60ffb4296b6e338d67))
+
 # 1.0.0-dev.1 (2025-06-13)
 
 
