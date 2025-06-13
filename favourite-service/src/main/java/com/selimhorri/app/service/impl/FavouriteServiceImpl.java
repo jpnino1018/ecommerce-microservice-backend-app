@@ -19,6 +19,7 @@ import com.selimhorri.app.repository.FavouriteRepository;
 import com.selimhorri.app.service.FavouriteService;
 
 import io.github.resilience4j.retry.annotation.Retry;
+import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -51,6 +52,7 @@ public class FavouriteServiceImpl implements FavouriteService {
 	// 				.collect(Collectors.toUnmodifiableList());
 	// }
 
+	@TimeLimiter(name = "userService")
 	@Retry(name = "userService", fallbackMethod = "fallbackUser")
 	public UserDto getUserById(int userId) {
 		return this.restTemplate.getForObject(
@@ -58,6 +60,7 @@ public class FavouriteServiceImpl implements FavouriteService {
 			UserDto.class);
 	}
 
+	@TimeLimiter(name = "productService")
 	@Retry(name = "productService", fallbackMethod = "fallbackProduct")
 	public ProductDto getProductById(int productId) {
 		return this.restTemplate.getForObject(

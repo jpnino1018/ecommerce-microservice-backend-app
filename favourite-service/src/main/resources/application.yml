@@ -35,6 +35,14 @@ resilience4j:
       productService:
         max-attempts: 3
         wait-duration: 1s
+  timelimiter:
+    instances:
+      userService:
+        timeout-duration: 2s
+        cancel-running-future: true
+      productService:
+        timeout-duration: 2s
+        cancel-running-future: true
 
 management:
   health:
